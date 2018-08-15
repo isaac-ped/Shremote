@@ -11,6 +11,7 @@ dir: /home/iped/logs/{0.label}
 # Available variables:
 #   {i}: Index of command instance if command is repeated.
 #        If not used, repeated instances of the command will overwrite the file
+#   {host}: The address on which the command is run
 pcap_encoder:
     out: encoder.out
     err: encoder.err
@@ -34,14 +35,14 @@ p4_dropper:
     err: err.txt
 tcpdump_in:
     dir: tcpdump_in
-    log: tcpdump_{i}.pcap
-    out: tcpdump_{i}.out
-    err: tcpdump_{i}.err
+    log: tcpdump_{host}.pcap
+    out: tcpdump_{host}.out
+    err: tcpdump_{host}.err
 tcpdump_out:
     dir: tcpdump_out
-    log: tcpdump_{i}.pcap
-    out: tcpdump_{i}.out
-    err: tcpdump_{i}.err
+    log: tcpdump_{host}.pcap
+    out: tcpdump_{host}.out
+    err: tcpdump_{host}.err
 tcpreplay:
     out: tcpreplay.out
     err: tcpreplay.err
