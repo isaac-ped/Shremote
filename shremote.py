@@ -266,6 +266,8 @@ class Log:
     def dict(self, **kwargs):
         if 'i' not in kwargs:
             kwargs['i'] = 0
+        if 'host' not in kwargs:
+            kwargs['host'] = '*HOST*'
         if self.log_ is not None:
             return dict(log=Config.format(self.log_, **kwargs))
         return dict()
@@ -323,7 +325,7 @@ class Program:
 
         self.log = Log.get(name)
         if self.log is not None:
-            print(name, "Log is", self.log.dict(host='*HOST*'))
+            print(name, "Log is", self.log.dict())
 
     def cmd(self, **kwargs):
         if self.log is not None:
@@ -417,7 +419,7 @@ class Command:
         for host_i, host in self.program.hosts.items():
             i = self.index + host_i + self.program.init_i
 
-            cmd_kwargs = self.dict(i=i, host=host.name)
+            cmd_kwargs = self.dict(i=i, host=host.addr)
 
             cmd = self.program.cmd(**cmd_kwargs)
             host.execute(cmd, self.program.fg, self.enforced_duration, self.program.check_rtn)

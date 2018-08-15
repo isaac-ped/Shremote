@@ -65,6 +65,7 @@ Each log has available the variable:
 * `{i}`: If a program is run multiple times, or on multiple hosts, this index will distinguish log
 files from one another. (Behavior undefined if `{i}` is not used and multiple program instances
 are started)
+* `{host}`: Will substitute the address of the host on which the command is being run
 
 ### programs:
 

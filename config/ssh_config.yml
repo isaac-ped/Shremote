@@ -2,6 +2,6 @@
 #   user: ssh user
 #   key: location of private key
 #   port: ssh port
-user: 'iped'
-key: '/Users/.../.ssh/...'
+user: '<user>'
+key: '~/.ssh/...'
 port: 22
