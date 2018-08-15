@@ -1,0 +1,7 @@
+# ssh: Parameters for connecting to hosts. Required fields:
+#   user: ssh user
+#   key: location of private key
+#   port: ssh port
+user: 'iped'
+key: '/Users/.../.ssh/...'
+port: 22

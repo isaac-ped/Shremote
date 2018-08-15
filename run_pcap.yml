@@ -1,0 +1,54 @@
+
+ssh: !include "config/ssh_config.yml"
+hosts: !include "config/tclust_hosts.yml"
+logs: !include "config/logs.yml"
+programs: !include "config/programs.yml"
+dirs: !include "config/dirs.yml"
+
+IFACE: ens1f1
+
+# Thesecommands are executed on the local machine before any remote commands. If none, set to []
+init_cmds: []
+    #- python make_tsung_cfg.py tsung_template_2ds_xml.xml {0.commands.tsung.rate} {0.files.tsung_cfg.src}
+    #- python make_tsung_cfg.py tsung_template_2ds_xml.xml {0.commands.flood.rate} {0.files.flood_cfg.src}
+
+# These files are copied from *local* to *remote* at start of test. If none, set to {}
+files: {}
+    # Each file has the following required fields:
+    #   src: local location
+    #   dst: remote location
+    #   addr: remote address, should reference {0.hosts.<host>.addr}
+
+
+# Each individual command to execute
+commands:
+
+    # Each command name should match a 'program' and (optionally) a 'log' above
+    #
+    # Each command contains the following optional fields:
+    #   begin: The time (in seconds) at which to start the command.
+    #          Can be negative to enforce order for commands run before the start of test
+    #          If omitted, defaults to 0
+    #   duration: If present and 'stop' defined in program above, the 'stop' command
+    #             will be run after this many seconds
+    #   `var`: Where `var` is some field used in the corresponding 'program' above
+    pcap_encoder:
+        duration: 30
+        enforce_duration: True
+    pcap_dropper:
+        duration: 30
+        enforce_duration: True
+    pcap_decoder:
+        duration: 30
+        enforce_duration: True
+    tcpdump_in:
+        begin: 5
+        duration:  23
+        enforce_duration: True
+    tcpdump_out:
+        begin: 5
+        duration:  23
+        enforce_duration: True
+    tcpreplay:
+        begin: 15
+        input: '~/tcp.pcap'
