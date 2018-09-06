@@ -17,6 +17,8 @@ import traceback
 from threading import Thread
 import threading
 
+test_mode = False
+
 start_time = time.time()
 
 def log(*args, **kwargs):
@@ -80,7 +82,7 @@ def call(cmd, enforce_duration=None, check_return=None):
                 return
     end = time.time()
     duration = end - start
-    if enforce_duration is not None:
+    if enforce_duration is not None and test_mode == False:
         if duration < enforce_duration:
             log_error("Command  ", cmd, "executed for ", int(duration), "seconds. Expected: ", enforce_duration)
             error_event.set()
@@ -281,16 +283,26 @@ class Log:
         return suffix
 
     def copy_local(self, hosts, dst_base):
+        threads = []
         for i, host in hosts.items():
             if self.has_dir:
                 src = Config.format(self.full_dir, i=i)
-                dst = Config.format(os.path.join(dst_base, self.dir), i=i)
+                dst = Config.format(os.path.join(dst_base, self.dir), i=i, host=host.addr)
+                # Have to make the directory manually, or else rsync might try to make it twice
+                # and fail
+                call("mkdir -p {}".format(dst))
 
-                host.rsync_from(src, dst)
+                thread = Thread(target=host.rsync_from, args=(src, dst))
+                thread.start()
+                threads.append(thread)
             else:
                 for f in self.cfg.dict.values():
-                    src = Config.format(os.path.join(self.full_dir, f), i=i)
-                    host.rsync_from(src, dst_base)
+                    src = Config.format(os.path.join(self.full_dir, f), i=i, host=host.addr)
+                    thread = Thread(target=host.rsync_from, args=(src, dst_base))
+                    thread.start()
+                    threads.append(thread)
+        for thread in threads:
+            thread.join()
 
     @classmethod
     def init_logs(cls, log_list):
@@ -416,22 +428,30 @@ class Command:
     def run(self):
         log("Running command : {}".format(self.pretty()))
 
+        starts = []
+        stops = []
+
         for host_i, host in self.program.hosts.items():
             i = self.index + host_i + self.program.init_i
 
             cmd_kwargs = self.dict(i=i, host=host.addr)
 
             cmd = self.program.cmd(**cmd_kwargs)
+            starts.append(cmd)
             host.execute(cmd, self.program.fg, self.enforced_duration, self.program.check_rtn)
 
             if self.program.stop is not None:
                 stop_cmd = self.program.stop_cmd(self.duration, **cmd_kwargs)
+                stops.append(stop_cmd)
                 host.execute(stop_cmd, False, None, None)
 
         cmd_kwargs['name_'] = self.name
         cmd_kwargs['time_'] = float(time.time())
         if self.duration  is not None:
             cmd_kwargs['stop_time_'] = float(time.time() + self.duration)
+
+        cmd_kwargs['starts_'] = starts
+        cmd_kwargs['stops_'] = stops
         return cmd_kwargs
 
     def stop(self):
@@ -482,12 +502,14 @@ class TestRunner:
     def instance(cls):
         return cls.instance_
 
-    def __init__(self, cfg_file, label, export_loc, test_run):
+    def __init__(self, cfg_file, label, out_dir, export_loc, test_run):
         if TestRunner.instance_ is None:
             TestRunner.instance_ = self
         else:
             log_fatal("Cannot instantiate multiple TestRunners")
         self.initialized = False
+
+        self.output_dir = os.path.join(out_dir, label) + '/'
 
         self.included_files = []
 
@@ -518,8 +540,8 @@ class TestRunner:
         self.commands = []
         for name, cmd_group in self.cfg.commands.dict.items():
             if isinstance(cmd_group, list):
-                for cmd in cmd_group:
-                    self.commands.append(Command(name, cmd))
+                for i, cmd in enumerate(cmd_group):
+                    self.commands.append(Command(name, cmd, index=i))
             else:
                 self.commands.append(Command(name, cmd_group))
         self.initialized = True
@@ -531,7 +553,7 @@ class TestRunner:
 
     def export_logs(self):
         log("Exporting logs...")
-        shutil.copytree(self.cfg.label, self.export_dir)
+        shutil.copytree(self.output_dir, self.export_dir)
 
     def run_init_cmds(self):
         for cmd in self.cfg.init_cmds:
@@ -560,6 +582,7 @@ class TestRunner:
                     call(cmd, check_return=0)
 
     def mkdirs(self):
+        threads = []
         for cmd in self.commands:
             prog = cmd.program
             hosts = prog.hosts
@@ -570,7 +593,11 @@ class TestRunner:
                 ssh = host.ssh
 
                 cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir, addr = host.addr, **ssh.dict)
-                call(cmd, check_return=0)
+                thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=0))
+                thread.start()
+                threads.append(thread)
+        for thread in threads:
+            thread.join()
 
     def show_commands(self):
         log("*****  List of commands to run: ")
@@ -619,19 +646,20 @@ class TestRunner:
             self.event_log.append(command.stop())
 
     def get_logs(self):
-        call("mkdir -p %s" % self.cfg.label)
+        call("mkdir -p %s" % self.output_dir)
 
         for program in set(c.program for c in self.commands):
             if program.log is not None:
-                program.log.copy_local(program.hosts, self.cfg.label)
+                program.log.copy_local(program.hosts, self.output_dir)
 
-        call('cp {} {}/'.format(self.cfg_file, self.cfg.label))
+        call('cp {} {}/'.format(self.cfg_file, self.output_dir))
+        call('cp {} {}/shremote_cfg.yml'.format(self.cfg_file, self.output_dir))
 
         for filename in self.included_files:
-            call('cp {} {}/'.format(filename, self.cfg.label))
+            call('cp {} {}/'.format(filename, self.output_dir))
 
     def write_log(self):
-        output = open(os.path.join(self.cfg.label, 'event_log.json'), 'w')
+        output = open(os.path.join(self.output_dir, 'event_log.json'), 'w')
         json.dump(self.event_log, output, indent=2)
 
     def run(self):
@@ -671,10 +699,14 @@ if __name__ == '__main__':
     parser.add_argument('--test', action='store_true', help='run through each command quickly')
     parser.add_argument('--export', type=str, required=False, help='Location to place files')
     parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
+    parser.add_argument('--out', type=str, default=".", help=('output directory'))
 
     args = parser.parse_args()
 
-    tester = TestRunner(args.cfg_file, args.label, args.export, args.test)
+    if args.test:
+        test_mode = True
+
+    tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test)
 
     if args.stop_only:
         tester.stop_all()
