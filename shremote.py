@@ -502,7 +502,7 @@ class TestRunner:
     def instance(cls):
         return cls.instance_
 
-    def __init__(self, cfg_file, label, out_dir, export_loc, test_run):
+    def __init__(self, cfg_file, label, out_dir, export_loc, test_run, args_dict):
         if TestRunner.instance_ is None:
             TestRunner.instance_ = self
         else:
@@ -519,7 +519,7 @@ class TestRunner:
         with open(cfg_file, 'r') as f:
             self.raw_cfg = yaml.load(f, Loader)
 
-        self.cfg = Config(self.raw_cfg, label=label)
+        self.cfg = Config(self.raw_cfg, label=label, args=args_dict)
         log("Initialized cfg at {}, label {}".format(cfg_file, label))
 
         self.event_log = []
@@ -556,14 +556,15 @@ class TestRunner:
         shutil.copytree(self.output_dir, self.export_dir)
 
     def run_init_cmds(self):
-        for cmd in self.cfg.init_cmds:
-            cmd = cmd.format(self.cfg)
+        for cmd, _ in self.cfg.init_cmds.items():
+            cmd = self.cfg.init_cmds.formatted(cmd)
             call(cmd)
 
     def copy_files(self):
         for name, file in self.cfg.files.dict.items():
-            src = file.src.format(self.cfg)
-            dst = file.dst.format(self.cfg)
+            src = file.formatted('src')
+            dst = file.formatted('dst')
+            dir = os.path.dirname(dst)
 
             if 'host' in file:
                 file_hosts = [file.host]
@@ -577,6 +578,10 @@ class TestRunner:
                 for host in hosts.values():
                     ssh = host.ssh
                     addr = host.addr
+
+                    ssh_cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir,
+                                             addr=addr, **ssh.dict)
+                    call(ssh_cmd)
 
                     cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
                     call(cmd, check_return=0)
@@ -698,17 +703,30 @@ if __name__ == '__main__':
     parser.add_argument('label', type=str, help='Label for resulting logs and sql dump')
     parser.add_argument('--test', action='store_true', help='run through each command quickly')
     parser.add_argument('--export', type=str, required=False, help='Location to place files')
+    parser.add_argument('--get-only', action='store_true', help='only retrieve files')
     parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
     parser.add_argument('--out', type=str, default=".", help=('output directory'))
+    parser.add_argument('--args', type=str, required=False, 
+                        help='additional arguments for yml (format k1:v1;k2:v2')
 
     args = parser.parse_args()
 
     if args.test:
         test_mode = True
 
-    tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test)
+    args_dict = {}
+    if args.args is not None:
+        entries = args.args.split(';')
+        for entry in entries:
+            k, v = entry.split(':')
+            args_dict[k] = v
+            log("Adding arg: {} = {}", k, v)
+
+    tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test, args_dict)
 
     if args.stop_only:
         tester.stop_all()
+    elif args.get_only:
+        tester.get_logs()
     else:
         tester.run()
