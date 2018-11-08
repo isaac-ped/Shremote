@@ -17,6 +17,12 @@ import traceback
 from threading import Thread
 import threading
 
+COLORS = dict(
+    END='\033[0m',
+    WARNING = '\033[93m',
+    ERROR = '\033[31m'
+)
+
 test_mode = False
 
 start_time = time.time()
@@ -25,12 +31,13 @@ def log(*args, **kwargs):
     print("DEBUG {:.1f}: ".format(time.time() - start_time), *args, **kwargs)
 
 def log_warn(*args, **kwargs):
-    print("WARNING: ", *args, **kwargs)
+
+    print(COLORS["WARNING"] + "WARNING: " + ' '.join(args) + COLORS['END'], **kwargs)
 
 def log_error(*args, **kwargs):
-    print("\n________________________________________________")
-    print("------- ERROR: ", *args, **kwargs)
-    print("________________________________________________\n")
+    print(COLORS['ERROR'] + "\n________________________________________________")
+    print("ERROR: ", *args, **kwargs)
+    print("________________________________________________" + COLORS['END'] + "\n")
 
 fatality = False
 error_event = threading.Event()
@@ -106,8 +113,8 @@ class Config(object):
         while '{' in st:
             try:
                 st = st.format(cls.instance_, **kwargs)
-            except Exception:
-                log_error("Error formatting {} with {}".format(st, kwargs))
+            except Exception as e:
+                log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
                 raise
         return st
 
@@ -165,8 +172,8 @@ class Config(object):
             while '{' in st:
                 try:
                     st = st.format(self.instance(), **kwargs)
-                except Exception:
-                    log_error("Error formatting {} with {}".format(st, kwargs))
+                except Exception as e:
+                    log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
                     raise
             return st
         return str(self.dict[key])
@@ -244,7 +251,11 @@ class Log:
         self.cfg = log_cfg
 
         self.has_dir = 'dir' in log_cfg
-        self.log_dir = Config.instance().logs.dir
+        if 'logs' in Config.instance():
+            self.log_dir = Config.instance().logs.dir
+        else:
+            self.log_dir = Config.instance().programs.log_dir
+
         self.dir = log_cfg.get('dir', '')
         self.full_dir = Config.format(os.path.join(self.log_dir, self.dir, ''))
 
@@ -331,7 +342,11 @@ class Program:
 
         Program.programs_[name] = self
 
-        self.hosts = Host.get(self.cfg.host)
+        try:
+            self.hosts = Host.get(self.cfg.host)
+        except:
+            log_error("Error initiating host ", self.cfg.host, " for program ", name)
+            raise
 
         self.init_i = self.cfg.get('init_i', 0)
 
@@ -367,7 +382,11 @@ class Program:
     @classmethod
     def init_programs(self, program_list):
         for name, prog in program_list.items():
-            Program(name, prog)
+            try:
+                Program(name, prog)
+            except:
+                log_error("Error initializing program ", name)
+                raise
 
 def safe_eval(st, label=''):
     try:
@@ -531,11 +550,23 @@ class TestRunner:
 
         Host.init_hosts(self.cfg.hosts)
 
-        Log.init_logs(self.cfg.logs)
+        if 'log' in self.cfg:
+            Log.init_logs(self.cfg.logs)
+        else:
+            for name, prog in self.cfg.programs.items():
+                if name != 'log_dir':
+                    if 'log' in prog:
+                        Log(name, prog.log)
 
         self.programs = {}
         for name, prog in self.cfg.programs.items():
-            self.programs[name] = Program(name, prog)
+            if name == 'log_dir':
+                continue
+            try:
+                self.programs[name] = Program(name, prog)
+            except:
+                log_error("Error initializing program ", name)
+                raise
 
         self.commands = []
         for name, cmd_group in self.cfg.commands.dict.items():
@@ -558,6 +589,7 @@ class TestRunner:
     def run_init_cmds(self):
         for cmd, _ in self.cfg.init_cmds.items():
             cmd = self.cfg.init_cmds.formatted(cmd)
+            cmd = cmd.replace('\n', ' ')
             call(cmd)
 
     def copy_files(self):
@@ -680,9 +712,9 @@ class TestRunner:
                 log("Exporting to {} at end of test".format(self.export_dir))
                 time.sleep(1)
 
+        self.mkdirs()
         self.run_init_cmds()
         self.copy_files()
-        self.mkdirs()
         self.show_commands()
         self.run_commands()
 
