@@ -253,8 +253,10 @@ class Log:
         self.has_dir = 'dir' in log_cfg
         if 'logs' in Config.instance():
             self.log_dir = Config.instance().logs.dir
-        else:
+        elif 'log_dir' in Config.instance().programs:
             self.log_dir = Config.instance().programs.log_dir
+        else:
+            raise Exception("Cannot locate logs in cfg.logs.dir or cfg.programs.log_dir")
 
         self.dir = log_cfg.get('dir', '')
         self.full_dir = Config.format(os.path.join(self.log_dir, self.dir, ''))
