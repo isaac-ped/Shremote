@@ -540,7 +540,8 @@ class TestRunner:
         with open(cfg_file, 'r') as f:
             self.raw_cfg = yaml.load(f, Loader)
 
-        self.cfg = Config(self.raw_cfg, label=label, args=args_dict)
+        call("mkdir -p %s" % self.output_dir)
+        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir)
         log("Initialized cfg at {}, label {}".format(cfg_file, label))
 
         self.event_log = []
