@@ -1,4 +1,5 @@
 from __future__ import print_function
+from collections import defaultdict
 import pprint
 import json
 import shutil
@@ -20,24 +21,38 @@ import threading
 COLORS = dict(
     END='\033[0m',
     WARNING = '\033[93m',
-    ERROR = '\033[31m'
+    ERROR = '\033[31m',
+    INFO = '\033[0;32m'
 )
 
 test_mode = False
 
 start_time = time.time()
 
+LOGFILE = None
+
+def log_(s, **print_kwargs):
+    if (LOGFILE is not None):
+        LOGFILE.write(s + '\n')
+    print(s, **print_kwargs)
+
 def log(*args, **kwargs):
-    print("DEBUG {:.1f}: ".format(time.time() - start_time), *args, **kwargs)
+    s = "DEBUG {:.1f}: ".format(time.time() - start_time)
+    log_(s + " ".join([str(x) for x in args]), **kwargs)
+
+def log_info(*args, **kwargs):
+    s = COLORS['INFO'] + 'INFO {:.1f}: '.format(time.time() - start_time)
+    log_(s + " ".join([str(x) for x in args]) + COLORS['END'], **kwargs)
 
 def log_warn(*args, **kwargs):
-
-    print(COLORS["WARNING"] + "WARNING: " + ' '.join(args) + COLORS['END'], **kwargs)
+    s = COLORS["WARNING"] + "WARNING: " + ' '.join([str(x) for x in args]) + COLORS['END']
+    log_(s, **kwargs)
 
 def log_error(*args, **kwargs):
-    print(COLORS['ERROR'] + "\n________________________________________________")
-    print("ERROR: ", *args, **kwargs)
-    print("________________________________________________" + COLORS['END'] + "\n")
+    s = COLORS['ERROR'] + "\n________________________________________________\n"
+    s += "ERROR: " + " ".join([str(x) for x in args])
+    s += "\n________________________________________________" + COLORS['END'] + "\n"
+    log_(s, **kwargs)
 
 fatality = False
 error_event = threading.Event()
@@ -70,7 +85,7 @@ def sigint_handler(signal, frame):
 
 signal.signal(signal.SIGINT, sigint_handler)
 
-def call(cmd, enforce_duration=None, check_return=None):
+def call(cmd, enforce_duration=None, check_return=None, raise_error=False):
     log("Executing ", cmd)
     if enforce_duration is not None:
         log("Ensuring command executes for at least %d" % enforce_duration)
@@ -85,8 +100,10 @@ def call(cmd, enforce_duration=None, check_return=None):
         if check_return is not None:
             if err.returncode != check_return:
                 log_error("Command ", cmd, " returned: ", err.returncode, ". Expected: ", check_return)
+                log_error(traceback.format_exc())
                 error_event.set()
-                return
+                if do_throw:
+                    raise
     end = time.time()
     duration = end - start
     if enforce_duration is not None and test_mode == False:
@@ -142,8 +159,17 @@ class Config(object):
                 self.dict[k] = v
 
     def __str__(self):
-        return pprint.pformat(self.dict)
+        return pprint.pformat(self.full_dict)
 
+    @property
+    def full_dict(self):
+        d = {}
+        for k, v in self.dict.items():
+            if isinstance(v, Config):
+                d[k] = v.full_dict
+            else:
+                d[k] = v
+        return d
 
     def items(self):
         return self.dict.items()
@@ -248,6 +274,7 @@ class Log:
 
     def __init__(self, log_name, log_cfg):
         log("Initializing log {}".format(log_name))
+        self.copied = defaultdict(lambda: False)
         self.cfg = log_cfg
 
         self.has_dir = 'dir' in log_cfg
@@ -295,27 +322,28 @@ class Log:
             suffix += ' 2> {}'.format(Config.format(self.err, **kwargs))
         return suffix
 
-    def copy_local(self, hosts, dst_base):
+    def copy_local(self, hosts, dst_base, i_offset=0):
         threads = []
         for i, host in hosts.items():
             if self.has_dir:
-                src = Config.format(self.full_dir, i=i)
-                dst = Config.format(os.path.join(dst_base, self.dir), i=i, host=host.addr)
+                src = Config.format(self.full_dir, i=i+i_offset)
+                dst = Config.format(os.path.join(dst_base, self.dir), i=i+i_offset, host=host.addr)
                 # Have to make the directory manually, or else rsync might try to make it twice
                 # and fail
-                call("mkdir -p {}".format(dst))
+                call("mkdir -p {}".format(dst), raise_error=True)
 
                 thread = Thread(target=host.rsync_from, args=(src, dst))
                 thread.start()
                 threads.append(thread)
             else:
                 for f in self.cfg.dict.values():
-                    src = Config.format(os.path.join(self.full_dir, f), i=i, host=host.addr)
+                    src = Config.format(os.path.join(self.full_dir, f), i=i+i_offset, host=host.addr)
                     thread = Thread(target=host.rsync_from, args=(src, dst_base))
                     thread.start()
                     threads.append(thread)
         for thread in threads:
             thread.join()
+        self.copied[i_offset] = True
 
     @classmethod
     def init_logs(cls, log_list):
@@ -444,10 +472,10 @@ class Command:
         return d
 
     def pretty(self, **kwargs):
-        return self.name + " : " + pprint.pformat(self.dict(**kwargs))
+        return self.name + " : " + pprint.pformat(self.dict(i=self.index, **kwargs))
 
     def run(self):
-        log("Running command : {}".format(self.pretty()))
+        log_info("Running command : {}".format(self.pretty()))
 
         starts = []
         stops = []
@@ -523,6 +551,13 @@ class TestRunner:
     def instance(cls):
         return cls.instance_
 
+    def open_log(self):
+        global LOGFILE
+        LOGFILE = open(os.path.join(self.output_dir, 'shremote.log'), 'w')
+
+    def close_log(self):
+        LOGFILE.close()
+
     def __init__(self, cfg_file, label, out_dir, export_loc, test_run, args_dict):
         if TestRunner.instance_ is None:
             TestRunner.instance_ = self
@@ -540,8 +575,9 @@ class TestRunner:
         with open(cfg_file, 'r') as f:
             self.raw_cfg = yaml.load(f, Loader)
 
-        call("mkdir -p %s" % self.output_dir)
+        call("mkdir -p %s" % self.output_dir, raise_error=True)
         self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir)
+        self.open_log()
         log("Initialized cfg at {}, label {}".format(cfg_file, label))
 
         self.event_log = []
@@ -593,7 +629,7 @@ class TestRunner:
         for cmd, _ in self.cfg.init_cmds.items():
             cmd = self.cfg.init_cmds.formatted(cmd)
             cmd = cmd.replace('\n', ' ')
-            call(cmd)
+            call(cmd, raise_error=True)
 
     def copy_files(self):
         for name, file in self.cfg.files.dict.items():
@@ -616,7 +652,7 @@ class TestRunner:
 
                     ssh_cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir,
                                              addr=addr, **ssh.dict)
-                    call(ssh_cmd)
+                    call(ssh_cmd, check_return=0, raise_error=True)
 
                     cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
                     call(cmd, check_return=0)
@@ -633,7 +669,7 @@ class TestRunner:
                 ssh = host.ssh
 
                 cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir, addr = host.addr, **ssh.dict)
-                thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=0))
+                thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=0, raise_error=True))
                 thread.start()
                 threads.append(thread)
         for thread in threads:
@@ -661,7 +697,7 @@ class TestRunner:
                         log_fatal("Error encountered in other thread!")
                 else:
                     time.sleep(.1)
-            elif last_begin != command.begin:
+            elif last_begin != command.begin and delay > .001:
                 log_warn("Falling behind on command execution by %.1f " % delay)
 
             last_begin = command.begin
@@ -686,17 +722,20 @@ class TestRunner:
             self.event_log.append(command.stop())
 
     def get_logs(self):
-        call("mkdir -p %s" % self.output_dir)
+        call("mkdir -p %s" % self.output_dir, raise_error=True)
 
-        for program in set(c.program for c in self.commands):
+        logs = set()
+        for command in self.commands:
+            program = command.program
             if program.log is not None:
-                program.log.copy_local(program.hosts, self.output_dir)
+                if not program.log.copied[command.index]:
+                    program.log.copy_local(program.hosts, self.output_dir, command.index)
 
-        call('cp {} {}/'.format(self.cfg_file, self.output_dir))
-        call('cp {} {}/shremote_cfg.yml'.format(self.cfg_file, self.output_dir))
+        call('cp {} {}/'.format(self.cfg_file, self.output_dir), raise_error=True)
+        call('cp {} {}/shremote_cfg.yml'.format(self.cfg_file, self.output_dir), raise_error=True)
 
         for filename in self.included_files:
-            call('cp {} {}/'.format(filename, self.output_dir))
+            call('cp {} {}/'.format(filename, self.output_dir), raise_error=True)
 
     def write_log(self):
         output = open(os.path.join(self.output_dir, 'event_log.json'), 'w')
@@ -741,7 +780,7 @@ if __name__ == '__main__':
     parser.add_argument('--get-only', action='store_true', help='only retrieve files')
     parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
     parser.add_argument('--out', type=str, default=".", help=('output directory'))
-    parser.add_argument('--args', type=str, required=False, 
+    parser.add_argument('--args', type=str, required=False,
                         help='additional arguments for yml (format k1:v1;k2:v2')
 
     args = parser.parse_args()
@@ -765,3 +804,5 @@ if __name__ == '__main__':
         tester.get_logs()
     else:
         tester.run()
+
+    tester.close_log()
