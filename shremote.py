@@ -464,7 +464,7 @@ class Command:
     def dict(self, **kwargs):
         d = {}
         for k, v in self.cfg.items():
-            d[k] = self.cfg.formatted(k, **kwargs)
+            d[k] = self.cfg.formatted(k, begin=self.begin, duration=self.duration, **kwargs)
         if self.log is not None:
             d.update(self.log.dict(**kwargs))
         d.update(begin=self.begin)
