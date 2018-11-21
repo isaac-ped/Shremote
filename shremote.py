@@ -462,7 +462,9 @@ class Command:
             self.enforced_duration = None
 
     def dict(self, **kwargs):
-        d = copy.deepcopy(self.cfg.dict)
+        d = {}
+        for k, v in self.cfg.items():
+            d[k] = self.cfg.formatted(k, **kwargs)
         if self.log is not None:
             d.update(self.log.dict(**kwargs))
         d.update(begin=self.begin)
