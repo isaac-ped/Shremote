@@ -102,7 +102,7 @@ def call(cmd, enforce_duration=None, check_return=None, raise_error=False):
                 log_error("Command ", cmd, " returned: ", err.returncode, ". Expected: ", check_return)
                 log_error(traceback.format_exc())
                 error_event.set()
-                if do_throw:
+                if raise_error:
                     raise
     end = time.time()
     duration = end - start
