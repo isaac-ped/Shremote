@@ -796,7 +796,7 @@ if __name__ == '__main__':
         for entry in entries:
             k, v = entry.split(':')
             args_dict[k] = v
-            log("Adding arg: {} = {}", k, v)
+            log("Adding arg: {} = {}".format(k, v))
 
     tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test, args_dict)
 
