@@ -661,6 +661,7 @@ class TestRunner:
 
     def mkdirs(self):
         threads = []
+        already_made = set()
         for cmd in self.commands:
             prog = cmd.program
             hosts = prog.hosts
@@ -670,10 +671,15 @@ class TestRunner:
                 dir = prog.log.full_dir.format(i=i)
                 ssh = host.ssh
 
-                cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir, addr = host.addr, **ssh.dict)
-                thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=0, raise_error=True))
-                thread.start()
-                threads.append(thread)
+                if (dir, host.addr) not in already_made:
+                    cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir, addr = host.addr, **ssh.dict)
+                    thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=0, raise_error=True))
+                    thread.start()
+                    threads.append(thread)
+                    already_made.add((dir, host.addr))
+                else:
+                    log("Already made %s on %s" % (dir, host.addr))
+
         for thread in threads:
             thread.join()
 
