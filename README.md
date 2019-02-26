@@ -13,6 +13,90 @@ and sample yml files.
 
 ## Configuration
 
+The following is a sample configuration file. Details of each section are laid out below:
+```yaml
+# Declare the default ssh parameters
+ssh:
+    user: isaac-ped
+    key: '~/.ssh/id_rsa'
+    port: 22
+
+# These commands are run on the local machine before test begins
+# Use it to generate files used during testing
+init_cmds:
+    generate_client_file: 'python make_client_file.py --output {0.files.client_file.src}'
+
+# Copy files from the local machine to remote hosts
+files:
+    client_file:
+        src: 'my_test_file.dat'
+        dst: '{0.programs.log_dir}/my_test_file.dat'
+        host: clients
+
+# Hosts are machines used in the experiments
+hosts:
+    # The can consist of a single machine:
+    server:
+        addr: domain1.edu
+    # Or a group of machines:
+    clients:
+        - addr: domain2.edu
+        - addr: domain3.edu
+          ssh: # And can provide custom ssh parameters
+            user: domain3_user
+            key: domain3_key
+            port: 22
+
+# Not necessary, but can declare parameters here referencable from anywhere
+globals:
+    experiment_length: 60
+    my_param: 'parameter_value'
+
+# Next, define the programs that will be executed during the test
+programs:
+    # Programs all write logs to this base directory
+    log_dir: ~/logs/{0.label}/
+
+    # This program runs on the 'server' host
+    setup_exp:
+        host: server
+        start: 'cd /path/to/script && ./do_something {param_1} {other_param}'
+        stop: pkill do_something
+        check_rtn: 0 # Ensure the processs returns 0
+        log: # Automatically log all stdout and stderr to these files
+            out: setup_stdout.txt
+            err: setup_stderr.txt
+
+    run_exp:
+        host: clients
+        start: 'cd /path/to/script && ./run_experiment {param_2} {duration}'
+        stop: pkill run_experiment
+        log: # Put logs in this subdirectory
+            dir: experiment
+            out: experiment_{i}_stdout.txt # Label logs with the experiment number
+            err: experiment_{i}_stderr.txt
+
+# Finally, define the timecourse and parameters of execution
+commands:
+
+    setup_exp:
+        begin: -20 # Start 20 second before main experiment
+        param_1: '{0.args.setup_param}' # Get this parameter from startup args
+        other_param: '{0.globals.my_param}' # Get this one from global definitions
+
+    # Run the experiment two times, with a 60 second pause between
+    run_exp:
+        - begin: 0
+          duration: '{0.globals.experiment_length}' # Run for 60 seconds
+          enforce_duration: True # Make sure that it doesn't end early
+          param_2: '{0.args.exp_param}' # Get this from startup args
+
+        - begin: '{0.globals.experiment_length} * 2' # Math possible!
+          duration: '{0.globals.experiment_length}'
+          param_2: '{0.args.exp_param}'
+```
+
+
 The programs, commands, logs, and timing are all defined in a central yml file.
 
 For ease of reproducing, a special `!include <file>` command is added to the yml parser.
