@@ -116,6 +116,10 @@ class Config(object):
     instance_ = None
 
     @classmethod
+    def clear_instance(cls):
+        cls.instance_ = None
+
+    @classmethod
     def instance(cls):
         if cls.instance_ is None:
             raise Exception("Config instance not instantiated")
@@ -133,6 +137,16 @@ class Config(object):
             except Exception as e:
                 log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
                 raise
+
+        return cls.eval(st)
+
+    @staticmethod
+    def eval(st):
+        if isinstance(st, str):
+            if st.startswith("$"):
+                st = st[1:]
+                if not st.startswith("$"):
+                    st = eval(st)
         return st
 
     def __init__(self, data, **kwargs):
@@ -175,17 +189,17 @@ class Config(object):
         return self.dict.items()
 
     def get(self, key, default):
-        return self.dict.get(key, default)
+        return self.eval(self.dict.get(key, default))
 
     def __contains__(self, key):
         return key in self.dict
 
     def __getitem__(self, key):
-        return self.dict[key]
+        return self.eval(self.dict[key])
 
     def __getattr__(self, key):
         if key in self.dict:
-            return self.dict[key]
+            return self.eval(self.dict[key])
         else:
             raise Exception("{} is not in config with fields {}".format(key, self.dict.keys()))
 
@@ -201,7 +215,9 @@ class Config(object):
                 except Exception as e:
                     log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
                     raise
-            return st
+
+            return self.eval(st)
+
         return str(self.dict[key])
 
 SSH_CMD = 'ssh -p {port} -i {key} {user}@{addr} "{cmd}"'
@@ -529,7 +545,10 @@ class Loader(yaml.SafeLoader):
 
     def __init__(self, stream):
 
-        self._root = os.path.split(stream.name)[0]
+        try :
+            self._root = os.path.split(stream.name)[0]
+        except AttributeError:
+            self._root = ''
 
         super(Loader, self).__init__(stream)
 
