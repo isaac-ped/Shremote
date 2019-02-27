@@ -2,12 +2,14 @@ import unittest
 import shremote as shr
 import yaml
 
+shr.LOG_DEBUG=False
+
 def load_raw_cfg(s):
     return yaml.load(s, shr.Loader)
 
 class TestConfig(unittest.TestCase):
 
-    def setUp(self):
+    def tearDown(self):
         shr.Config.clear_instance()
 
     def test_eval_format(self):
@@ -39,6 +41,44 @@ y: $$({0.x})
         x = cfg.formatted('y')
         self.assertEqual(x, '$($(foobar))')
 
+
+class TestProgram(unittest.TestCase):
+
+    def setUp(self):
+        root_cfg = '''
+ssh:
+    user: iped
+    key: ''
+    port: 22
+
+hosts:
+    test_host:
+        addr: test.com
+'''
+        dcfg = yaml.load(root_cfg)
+        cfg = shr.Config(dcfg)
+        shr.Host('test_host', cfg.hosts.test_host)
+
+    def test_defalt_args(self):
+        program = dict(
+                host = 'test_host',
+                start = '{x} {y} {z}',
+                defaults = {
+                    'x': 'a',
+                    'y': 'b',
+                    'z': 'c'
+                }
+        )
+        prog_cfg = shr.Config(program)
+        prog = shr.Program('test_prog', prog_cfg)
+        cmd = prog.cmd().strip()
+        self.assertEqual(cmd, 'a b c')
+
+        cmd = prog.cmd(x=1, y=2, z=3).strip()
+        self.assertEqual(cmd, '1 2 3')
+
+        cmd = prog.cmd(y=2).strip()
+        self.assertEqual(cmd, 'a 2 c')
 
 if __name__ == '__main__':
     unittest.main()

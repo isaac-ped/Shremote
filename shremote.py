@@ -31,10 +31,13 @@ start_time = time.time()
 
 LOGFILE = None
 
+LOG_DEBUG = True
+
 def log_(s, **print_kwargs):
     if (LOGFILE is not None):
         LOGFILE.write(s + '\n')
-    print(s, **print_kwargs)
+    if LOG_DEBUG:
+        print(s, **print_kwargs)
 
 def log(*args, **kwargs):
     s = "DEBUG {:.1f}: ".format(time.time() - start_time)
@@ -155,10 +158,10 @@ class Config(object):
 
         self.__dict__['dict'] = {}
 
-        load_from = data.copy()
-        load_from.update(kwargs)
+        self.orig_data = data.copy()
+        self.orig_data.update(kwargs)
 
-        for k, v in load_from.items():
+        for k, v in self.orig_data.items():
             if isinstance(v, dict):
                 self.dict[k] = Config(v)
             elif isinstance(v, list):
@@ -386,6 +389,8 @@ class Program:
 
         self.check_rtn = self.cfg.get('check_rtn', None)
 
+        self.default_kwargs = self.cfg.get('defaults', {})
+
         Program.programs_[name] = self
 
         try:
@@ -400,7 +405,9 @@ class Program:
         if self.log is not None:
             print(name, "Log is", self.log.dict())
 
-    def cmd(self, **kwargs):
+    def cmd(self, **new_kwargs):
+        kwargs = self.default_kwargs.full_dict
+        kwargs.update(new_kwargs)
         if self.log is not None:
             suffix = self.log.suffix(**kwargs)
             kwargs.update(self.log.dict(**kwargs))
@@ -416,6 +423,8 @@ class Program:
             return self.stop_cmd(**kwargs)
 
     def stop_cmd(self, delay = None, **kwargs):
+        kwargs = self.default_kwargs.full_dict
+        kwargs.update(new_kwargs)
         if self.stop is None:
             return None
         if delay is not None:
