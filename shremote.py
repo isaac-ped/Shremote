@@ -158,10 +158,10 @@ class Config(object):
 
         self.__dict__['dict'] = {}
 
-        self.orig_data = data.copy()
-        self.orig_data.update(kwargs)
+        orig_data = data.copy()
+        orig_data.update(kwargs)
 
-        for k, v in self.orig_data.items():
+        for k, v in orig_data.items():
             if isinstance(v, dict):
                 self.dict[k] = Config(v)
             elif isinstance(v, list):
@@ -389,7 +389,7 @@ class Program:
 
         self.check_rtn = self.cfg.get('check_rtn', None)
 
-        self.default_kwargs = self.cfg.get('defaults', {})
+        self.default_kwargs = self.cfg.get('defaults', Config({}))
 
         Program.programs_[name] = self
 
@@ -422,7 +422,7 @@ class Program:
         elif self.stop is not None:
             return self.stop_cmd(**kwargs)
 
-    def stop_cmd(self, delay = None, **kwargs):
+    def stop_cmd(self, delay = None, **new_kwargs):
         kwargs = self.default_kwargs.full_dict
         kwargs.update(new_kwargs)
         if self.stop is None:
