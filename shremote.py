@@ -629,7 +629,7 @@ class TestRunner:
 
         self.programs = {}
         for name, prog in self.cfg.programs.items():
-            if name == 'log_dir':
+            if name not in self.cfg.commands:
                 continue
             try:
                 self.programs[name] = Program(name, prog)
