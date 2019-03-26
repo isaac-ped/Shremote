@@ -60,13 +60,33 @@ inherited: !inherit |
         cfg = '''
 inherited: !inherit |
     test_include.yml::entry_one
-    sub_key2: inherited_value
+    sub_key2: new_value2
 '''
         raw_cfg = yaml.load(cfg, shr.Loader)
         included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
 
-        self.assertEqual(raw_cfg['inherited']['sub_key1'], included_cfg['entry_one']['sub_key1'])
-        self.assertEqual(raw_cfg['inherited']['sub_key2'], 'inherited_value')
+        self.assertEqual(raw_cfg['inherited']['sub_key1'],
+                         included_cfg['entry_one']['sub_key1'])
+
+        self.assertEqual(raw_cfg['inherited']['sub_key2'], 'new_value2')
+
+    def test_inherited_merge(self):
+        cfg = '''
+inherited: !inherit |
+    test_include.yml
+    entry_one:
+        sub_key2: new_value2
+        sub_key3: new_value3
+'''
+        raw_cfg = yaml.load(cfg, shr.Loader)
+        included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
+
+        self.assertEqual(raw_cfg['inherited']['entry_one']['sub_key1'],
+                         included_cfg['entry_one']['sub_key1'])
+        self.assertEqual(raw_cfg['inherited']['entry_one']['sub_key2'],
+                         'new_value2')
+        self.assertEqual(raw_cfg['inherited']['entry_one']['sub_key3'],
+                         'new_value3')
 
 class TestConfig(unittest.TestCase):
 
