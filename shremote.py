@@ -581,10 +581,8 @@ class Loader(yaml.SafeLoader):
                 self.test_runner.included_files.append(filename)
             return rtn
 
-    def do_import(self, node):
-
-        import_str = self.construct_scalar(node)
-        split_import = import_str.split(':')
+    def load_import(self, import_str):
+        split_import = import_str.split('::')
 
         filename = os.path.join(self._root, split_import[0])
 
@@ -600,9 +598,28 @@ class Loader(yaml.SafeLoader):
                     raise ImportException("Could not find {} in {}".format(':'.join(split_import[1:i+2]), filename))
             return rtn
 
+
+    def do_import(self, node):
+        import_str = self.construct_scalar(node)
+        return self.load_import(import_str)
+
+    def inherit(self, node):
+
+        import_str = self.construct_scalar(node)
+        lines = import_str.splitlines()
+        import_str = lines[0]
+        rest = '\n'.join(lines[1:])
+
+        imported = self.load_import(import_str)
+        merger = yaml.load(rest, Loader)
+
+        if merger is not None:
+            imported.update(merger)
+        return imported
+
 Loader.add_constructor('!include', Loader.include)
 Loader.add_constructor('!import', Loader.do_import)
-
+Loader.add_constructor("!inherit", Loader.inherit)
 
 class TestRunner:
 

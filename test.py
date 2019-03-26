@@ -10,41 +10,63 @@ def load_raw_cfg(s):
 class TestLoader(unittest.TestCase):
 
     def test_full_import(self):
-        eval_cfg = '''
+        cfg = '''
 imported: !import test_include.yml
 '''
-        raw_cfg = yaml.load(eval_cfg, shr.Loader)
+        raw_cfg = yaml.load(cfg, shr.Loader)
         included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg)
 
     def test_1_partial_import(self):
-        eval_cfg = '''
-imported: !import test_include.yml:entry_one
+        cfg = '''
+imported: !import test_include.yml::entry_one
 '''
-        raw_cfg = yaml.load(eval_cfg, shr.Loader)
+        raw_cfg = yaml.load(cfg, shr.Loader)
         included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg['entry_one'])
 
     def test_2_partial_import(self):
-        eval_cfg = '''
-imported: !import test_include.yml:entry_one:sub_key
+        cfg = '''
+imported: !import test_include.yml::entry_one::sub_key1
 '''
-        raw_cfg = yaml.load(eval_cfg, shr.Loader)
+        raw_cfg = yaml.load(cfg, shr.Loader)
         included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
 
-        self.assertEqual(raw_cfg['imported'], included_cfg['entry_one']['sub_key'])
+        self.assertEqual(raw_cfg['imported'], included_cfg['entry_one']['sub_key1'])
 
     def test_dne_import(self):
-        eval_cfg = '''
-imported: !import test_include.yml:entry_one:NONEXISTENT_KEY2
+        cfg = '''
+imported: !import test_include.yml::entry_one::NONEXISTENT_KEY2
 '''
         try:
-            raw_cfg = yaml.load(eval_cfg, shr.Loader)
+            raw_cfg = yaml.load(cfg, shr.Loader)
             self.assertTrue(False, "Importing nonexistent key did not fail")
         except shr.ImportException:
             pass
+
+    def test_inherit_no_override(self):
+        cfg = '''
+inherited: !inherit |
+    test_include.yml::entry_one
+'''
+        raw_cfg = yaml.load(cfg, shr.Loader)
+        included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
+
+        self.assertEqual(raw_cfg['inherited'], included_cfg['entry_one'])
+
+    def test_inherit_override(self):
+        cfg = '''
+inherited: !inherit |
+    test_include.yml::entry_one
+    sub_key2: inherited_value
+'''
+        raw_cfg = yaml.load(cfg, shr.Loader)
+        included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
+
+        self.assertEqual(raw_cfg['inherited']['sub_key1'], included_cfg['entry_one']['sub_key1'])
+        self.assertEqual(raw_cfg['inherited']['sub_key2'], 'inherited_value')
 
 class TestConfig(unittest.TestCase):
 
