@@ -7,6 +7,45 @@ shr.LOG_DEBUG=False
 def load_raw_cfg(s):
     return yaml.load(s, shr.Loader)
 
+class TestLoader(unittest.TestCase):
+
+    def test_full_import(self):
+        eval_cfg = '''
+imported: !import test_include.yml
+'''
+        raw_cfg = yaml.load(eval_cfg, shr.Loader)
+        included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
+
+        self.assertEqual(raw_cfg['imported'], included_cfg)
+
+    def test_1_partial_import(self):
+        eval_cfg = '''
+imported: !import test_include.yml:entry_one
+'''
+        raw_cfg = yaml.load(eval_cfg, shr.Loader)
+        included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
+
+        self.assertEqual(raw_cfg['imported'], included_cfg['entry_one'])
+
+    def test_2_partial_import(self):
+        eval_cfg = '''
+imported: !import test_include.yml:entry_one:sub_key
+'''
+        raw_cfg = yaml.load(eval_cfg, shr.Loader)
+        included_cfg = yaml.load(open('test_include.yml'), shr.Loader)
+
+        self.assertEqual(raw_cfg['imported'], included_cfg['entry_one']['sub_key'])
+
+    def test_dne_import(self):
+        eval_cfg = '''
+imported: !import test_include.yml:entry_one:NONEXISTENT_KEY2
+'''
+        try:
+            raw_cfg = yaml.load(eval_cfg, shr.Loader)
+            self.assertTrue(False, "Importing nonexistent key did not fail")
+        except shr.ImportException:
+            pass
+
 class TestConfig(unittest.TestCase):
 
     def tearDown(self):
@@ -55,7 +94,7 @@ hosts:
     test_host:
         addr: test.com
 '''
-        dcfg = yaml.load(root_cfg)
+        dcfg = yaml.load(root_cfg, Loader=yaml.SafeLoader)
         cfg = shr.Config(dcfg)
         shr.Host('test_host', cfg.hosts.test_host)
 

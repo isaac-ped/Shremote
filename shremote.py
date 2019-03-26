@@ -548,11 +548,20 @@ class Command:
 
         return cmd_kwargs
 
+class ImportException(Exception):
+    pass
 
 #https://stackoverflow.com/questions/528281/how-can-i-include-an-yaml-file-inside-another
 class Loader(yaml.SafeLoader):
 
     def __init__(self, stream):
+
+        try:
+            self.test_runner = TestRunner.instance()
+        except AttributeError:
+            log_warn("Test runner not instantiated")
+            self.test_runner = None
+
 
         try :
             self._root = os.path.split(stream.name)[0]
@@ -567,10 +576,32 @@ class Loader(yaml.SafeLoader):
 
         with open(filename, 'r') as f:
             rtn = yaml.load(f, Loader)
-            TestRunner.instance().included_files.append(filename)
+
+            if self.test_runner is not None:
+                self.test_runner.included_files.append(filename)
+            return rtn
+
+    def do_import(self, node):
+
+        import_str = self.construct_scalar(node)
+        split_import = import_str.split(':')
+
+        filename = os.path.join(self._root, split_import[0])
+
+        with open(filename, 'r') as f:
+            rtn = yaml.load(f, Loader)
+            if self.test_runner is not None:
+                self.test_runner.included_files.append(filename)
+
+            for i, sub_node in enumerate(split_import[1:]):
+                if sub_node in rtn:
+                    rtn = rtn[sub_node]
+                else:
+                    raise ImportException("Could not find {} in {}".format(':'.join(split_import[1:i+2]), filename))
             return rtn
 
 Loader.add_constructor('!include', Loader.include)
+Loader.add_constructor('!import', Loader.do_import)
 
 
 class TestRunner:
