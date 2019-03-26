@@ -88,7 +88,7 @@ def sigint_handler(signal, frame):
 
 signal.signal(signal.SIGINT, sigint_handler)
 
-def call(cmd, enforce_duration=None, check_return=None, raise_error=False):
+def call(cmd, enforce_duration=None, check_return=False, raise_error=False):
     log("Executing ", cmd)
     if enforce_duration is not None:
         log("Ensuring command executes for at least %d" % enforce_duration)
@@ -100,9 +100,11 @@ def call(cmd, enforce_duration=None, check_return=None, raise_error=False):
     except CalledProcessError as err:
         if len(err.output) > 0:
             log("Command ", cmd, "output: ", err.output)
-        if check_return is not None:
+        if check_return is not  False:
             if err.returncode != check_return:
-                log_error("Command ", cmd, " returned: ", err.returncode, ". Expected: ", check_return)
+                log_error("Command ", cmd, "\n\treturned: ", err.returncode,
+                          ". Expected: ", check_return,
+                          "\n\tIf this command should have executed anyway, add `check_rtn: False` to command")
                 log_error(traceback.format_exc())
                 error_event.set()
                 if raise_error:
@@ -113,6 +115,9 @@ def call(cmd, enforce_duration=None, check_return=None, raise_error=False):
         if duration < enforce_duration:
             log_error("Command  ", cmd, "executed for ", int(duration), "seconds. Expected: ", enforce_duration)
             error_event.set()
+
+class BadExecException(Exception):
+    pass
 
 class Config(object):
 
@@ -144,12 +149,46 @@ class Config(object):
         return cls.eval(st)
 
     @staticmethod
-    def eval(st):
+    def innermost_exec_str(st):
+        # To start, find all $( which aren't $$(
+        matches = re.finditer(r'(^|[^$])(\$\()', st)
+        starts = [m.start(2) for m in matches]
+        if len(starts) == 0:
+            return None
+        # The last match will be innermost or alone
+        start_idx = starts[-1]
+        end_idx = None
+        stack = []
+        for i in range(len(st)-1, start_idx, -1):
+            if st[i] == ')':
+                stack.append(i)
+            if st[i] == '(' and len(stack) > 0:
+                end_idx = stack.pop()
+        if end_idx is None:
+            raise BadExecException("Cannot find end of exec string: {}".format(st[last_match_idx:]))
+        return st[start_idx:end_idx+1]
+
+    @classmethod
+    def eval(cls, st):
         if isinstance(st, str):
-            if st.startswith("$"):
-                st = st[1:]
-                if not st.startswith("$"):
-                    st = eval(st)
+            eval_grp = cls.innermost_exec_str(st)
+            while eval_grp is not None:
+                # Cut off the starting $, leaving (...)
+                to_eval = eval_grp[1:]
+                rep_with = str(eval(to_eval))
+
+                st = st.replace(eval_grp, rep_with)
+
+                eval_grp = cls.innermost_exec_str(st)
+
+            # Cast if possible
+            try:
+                return int(st)
+            except:
+                try:
+                    return float(st)
+                except:
+                    return st
         return st
 
     def __init__(self, data, **kwargs):
@@ -177,6 +216,9 @@ class Config(object):
 
     def __str__(self):
         return pprint.pformat(self.full_dict)
+
+    def set_permanent(self, **kwargs):
+        self.dict.update(kwargs)
 
     @property
     def full_dict(self):
@@ -210,6 +252,8 @@ class Config(object):
         self.dict[key] = value
 
     def formatted(self, key, **kwargs):
+        if isinstance(self.dict[key], Config):
+            return self.dict[key]
         if isinstance(self.dict[key], str):
             st = self.dict[key]
             while '{' in st:
@@ -219,9 +263,17 @@ class Config(object):
                     log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
                     raise
 
-            return self.eval(st)
+            # $() can be escaped: $$() => '$()'
+            st = self.eval(st)
+            if isinstance(st, str):
+                st = st.replace('$$','$')
+            return st
 
-        return str(self.dict[key])
+        st = str(self.dict[key])
+        st = self.eval(st)
+        if isinstance(st, str):
+            st = st.replace('$$', '$')
+        return st
 
 SSH_CMD = 'ssh -p {port} -i {key} {user}@{addr} "{cmd}"'
 SCP_OUT_CMD = 'scp -P {port} -i {key} {src} {user}@{addr}:{dst}'
@@ -255,6 +307,10 @@ class Host:
     def rsync_from(self, src, dst):
         cmd = RSYNC_IN_CMD.format(src=src, dst=dst, addr=self.addr, **self.ssh.dict)
         call(cmd, None, None)
+
+    def verify(self, cmd):
+        full_cmd = SSH_CMD.format(cmd=cmd, addr=self.addr, **self.ssh.dict)
+        log("Verified: {}".format(full_cmd))
 
     def execute(self, cmd, do_wait, enforce_duration, check_return):
         full_cmd = SSH_CMD.format(cmd=cmd, addr = self.addr, **self.ssh.dict)
@@ -291,18 +347,23 @@ class Log:
     def has(cls, name):
         return name in cls.logs_
 
+    @classmethod
+    def get_log_dir(cls):
+        if 'logs' in Config.instance():
+            return Config.instance().logs.dir
+        elif 'log_dir' in Config.instance().programs:
+            return Config.instance().programs.log_dir
+        else:
+            raise Exception("Cannot locate logs in cfg.logs.dir or cfg.programs.log_dir")
+
     def __init__(self, log_name, log_cfg):
         log("Initializing log {}".format(log_name))
         self.copied = defaultdict(lambda: False)
         self.cfg = log_cfg
 
         self.has_dir = 'dir' in log_cfg
-        if 'logs' in Config.instance():
-            self.log_dir = Config.instance().logs.dir
-        elif 'log_dir' in Config.instance().programs:
-            self.log_dir = Config.instance().programs.log_dir
-        else:
-            raise Exception("Cannot locate logs in cfg.logs.dir or cfg.programs.log_dir")
+
+        self.log_dir = Log.get_log_dir()
 
         self.dir = log_cfg.get('dir', '')
         self.full_dir = Config.format(os.path.join(self.log_dir, self.dir, ''))
@@ -387,7 +448,7 @@ class Program:
         self.start = self.cfg.get('start', None)
         self.stop = self.cfg.get('stop', None)
 
-        self.check_rtn = self.cfg.get('check_rtn', None)
+        self.check_rtn = self.cfg.get('check_rtn', 0)
 
         self.default_kwargs = self.cfg.get('defaults', Config({}))
 
@@ -460,7 +521,14 @@ class Command:
         self.duration = None
 
         if 'begin' in cmd_cfg:
-            self.begin = float(safe_eval(cmd_cfg.formatted('begin'), 'begin'))
+            begin_raw = cmd_cfg.formatted('begin')
+            try:
+                begin_evaled = safe_eval(begin_raw, 'begin')
+                if str(begin_evaled) != str(begin_raw): # Means that 'eval' did something
+                    log_warn("Specifying evaluatable begin without $(...) is deprecated: {}".format(begin_raw))
+                self.begin = float(begin_evaled)
+            except TypeError: # Begin shouldn't have to be eval'd again
+                self.begin = float(begin_raw)
 
         self.index = index if index is not None else 0
         self.program = Program.get(program_name)
@@ -469,12 +537,34 @@ class Command:
         self.name = program_name
 
         if 'duration' in cmd_cfg:
-            dur = safe_eval(cmd_cfg.formatted('duration', **self.dict()), 'duration')
+            duration_raw = cmd_cfg.formatted('duration', **self.dict())
+            try:
+                dur = safe_eval(duration_raw, 'duration')
+                if str(dur) != str(duration_raw): # Means that 'eval' did something
+                    log_warn("Specifying evaluatable duration without $(...) is deprecated: {}".format(duration_raw))
+            except TypeError: ## This is fine, duration shouldn't have to be evaluated again
+                dur = duration_raw
+                pass
+
             self.duration = float(dur)
             if self.program.start is None:
                 log_fatal("{}: Cannot specify duration when program is missing 'start'".format(program_name))
         elif self.program.start is not None and self.program.stop is not None:
                 log_fatal("{}: Must specify duration if program contains both 'start' and 'stop'".format(program_name))
+
+        if 'enforce_duration' in self.program.cfg:
+            if self.program.cfg.enforce_duration == True:
+                if self.duration is not None:
+                    self.enforced_duration = self.duration - 1
+                else:
+                    self.enforced_duration = self.program.cfg.enforce_duration
+            else:
+                self.enforced_duration = self.program.enforce_duration
+        else:
+            if self.duration is not None:
+                self.enforced_duration = self.duration - 1
+            else:
+                self.enforced_duration = None
 
         if 'enforce_duration' in cmd_cfg:
             if cmd_cfg.enforce_duration == True:
@@ -482,9 +572,7 @@ class Command:
                     log_fatal("Specified enforce duration = True with no duration specified")
                 self.enforced_duration = self.duration - 1
             else:
-                self.enforced_duration = float(safe_eval(cmd_cfg.formatted('enforce_duration'), 'enforce_duration'))
-        else:
-            self.enforced_duration = None
+                self.enforced_duration = cmd_cfg.formatted('enforce_duration')
 
     def dict(self, **kwargs):
         d = {}
@@ -500,6 +588,15 @@ class Command:
 
     def pretty(self, **kwargs):
         return self.name + " : " + pprint.pformat(self.dict(i=self.index, **kwargs))
+
+    def verify(self):
+        log("Verifying command : {}".format(self.name))
+
+        for host_i, host in self.program.hosts.items():
+            i = self.index + host_i + self.program.init_i
+            cmd_kwargs = self.dict(i=i, host=host.addr)
+            cmd = self.program.cmd(**cmd_kwargs)
+            host.verify(cmd)
 
     def run(self):
         log_info("Running command : {}".format(self.pretty()))
@@ -519,7 +616,7 @@ class Command:
             if self.program.stop is not None:
                 stop_cmd = self.program.stop_cmd(self.duration, **cmd_kwargs)
                 stops.append(stop_cmd)
-                host.execute(stop_cmd, False, None, None)
+                host.execute(stop_cmd, False, None, False)
 
         cmd_kwargs['name_'] = self.name
         cmd_kwargs['time_'] = float(time.time())
@@ -603,6 +700,19 @@ class Loader(yaml.SafeLoader):
         import_str = self.construct_scalar(node)
         return self.load_import(import_str)
 
+    @classmethod
+    def merge_dicts(cls, d1, d2):
+        d3 = d1.copy()
+        for k, v in d2.items():
+            if k in d3:
+                if isinstance(d3[k], dict):
+                    d3[k] = cls.merge_dicts(d3[k], v)
+                else:
+                    d3[k] = v
+            else:
+                d3[k] = v
+        return d3
+
     def inherit(self, node):
 
         import_str = self.construct_scalar(node)
@@ -614,7 +724,7 @@ class Loader(yaml.SafeLoader):
         merger = yaml.load(rest, Loader)
 
         if merger is not None:
-            imported.update(merger)
+            imported = self.merge_dicts(imported, merger)
         return imported
 
 Loader.add_constructor('!include', Loader.include)
@@ -654,8 +764,10 @@ class TestRunner:
             self.raw_cfg = yaml.load(f, Loader)
 
         call("mkdir -p %s" % self.output_dir, raise_error=True)
-        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir)
+        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir, 
+                          local_out = self.output_dir)
         self.open_log()
+        self.cfg.set_permanent(remote_out = Log.get_log_dir())
         log("Initialized cfg at {}, label {}".format(cfg_file, label))
 
         self.event_log = []
@@ -703,11 +815,52 @@ class TestRunner:
         log("Exporting logs...")
         shutil.copytree(self.output_dir, self.export_dir)
 
+    def verify_init_cmds(self):
+        log_info("Verifying init cmds")
+        for cmd, _ in self.cfg.init_cmds.items():
+            cmd = self.cfg.init_cmds.formatted(cmd)
+            if isinstance(cmd, Config):
+                cmd = cmd.formatted("cmd")
+            cmd = cmd.replace('\n', ' ')
+            log("Verified command {}".format(cmd))
+
     def run_init_cmds(self):
         for cmd, _ in self.cfg.init_cmds.items():
             cmd = self.cfg.init_cmds.formatted(cmd)
+            check_rtn = 0
+            if isinstance(cmd, Config):
+                check_rtn = cmd.get('check_rtn', 0)
+                cmd = cmd.formatted("cmd")
             cmd = cmd.replace('\n', ' ')
-            call(cmd, raise_error=True)
+            call(cmd, raise_error=True, check_return=check_rtn)
+
+    def verify_files(self):
+        log_info("Verifying files")
+        for name, file in self.cfg.files.dict.items():
+            log("Verifying {}".format(name))
+            src = file.formatted('src')
+            dst = file.formatted('dst')
+            dir = os.path.dirname(dst)
+
+            if 'host' in file:
+                file_hosts = [file.host]
+            elif 'hosts' in file:
+                file_hosts = file.hosts
+            else:
+                log_fatal("File {} does not specify host or hosts".format(name))
+
+            for host_name in file_hosts:
+                hosts = Host.get(host_name)
+                for host in hosts.values():
+                    ssh = host.ssh
+                    addr = host.addr
+
+                    ssh_cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir,
+                                             addr=addr, **ssh.dict)
+                    cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
+
+                    log('Verfied mkdir: {}'.format(ssh_cmd))
+                    log('Verified scp: {}'.format(cmd))
 
     def copy_files(self):
         for name, file in self.cfg.files.dict.items():
@@ -763,6 +916,11 @@ class TestRunner:
         log("*****  List of commands to run: ")
         for command in self.sorted_commands:
             log(command.pretty())
+
+    def verify_commands(self):
+        log_info("Verifying commands")
+        for command in self.sorted_commands:
+            command.verify()
 
     def run_commands(self):
         min_begin = min(c.begin for c in self.commands)
@@ -821,11 +979,33 @@ class TestRunner:
         for filename in self.included_files:
             call('cp {} {}/'.format(filename, self.output_dir), raise_error=True)
 
+
     def write_log(self):
         output = open(os.path.join(self.output_dir, 'event_log.json'), 'w')
         json.dump(self.event_log, output, indent=2)
 
+    def verify(self):
+        try:
+            self.verify_init_cmds()
+        except Exception as e:
+            log_error("Error verifying init cmds")
+            raise
+
+        try:
+            self.verify_files()
+        except Exception as e:
+            log_error("Error verifying files to copy")
+            raise
+
+        try:
+            self.verify_commands()
+        except Exception as e:
+            log_error("Error verifying remote commands")
+            raise
+
     def run(self):
+        self.verify()
+
         if self.do_export:
             if self.test_run:
                 self.export_dir += '__TEST'
@@ -860,6 +1040,7 @@ if __name__ == '__main__':
     parser.add_argument('cfg_file', type=str, help='.yml cfg file')
     parser.add_argument('label', type=str, help='Label for resulting logs and sql dump')
     parser.add_argument('--test', action='store_true', help='run through each command quickly')
+    parser.add_argument('--parse-test', action='store_true', help='Only test parsing of the cfg')
     parser.add_argument('--export', type=str, required=False, help='Location to place files')
     parser.add_argument('--get-only', action='store_true', help='only retrieve files')
     parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
@@ -886,7 +1067,9 @@ if __name__ == '__main__':
         tester.stop_all()
     elif args.get_only:
         tester.get_logs()
+    elif args.parse_test:
+        tester.verify()
     else:
         tester.run()
+        tester.close_log()
 
-    tester.close_log()
