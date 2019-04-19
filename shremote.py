@@ -643,7 +643,7 @@ class Command:
             cmd = self.program.stop_cmd(**cmd_kwargs)
 
             if cmd is not None:
-                host.execute(cmd, True, None, None)
+                host.execute(cmd, True, None, False)
 
         cmd_kwargs['name_'] = self.name
         cmd_kwargs['stop_time_'] = float(time.time())
