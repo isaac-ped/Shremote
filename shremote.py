@@ -552,14 +552,16 @@ class Command:
         elif self.program.start is not None and self.program.stop is not None:
                 log_fatal("{}: Must specify duration if program contains both 'start' and 'stop'".format(program_name))
 
+
         if 'enforce_duration' in self.program.cfg:
-            if self.program.cfg.enforce_duration == True:
+            enforce_duration = self.program.cfg.formatted('enforce_duration', **self.dict())
+            if enforce_duration == True:
                 if self.duration is not None:
                     self.enforced_duration = self.duration - 1
                 else:
-                    self.enforced_duration = self.program.cfg.enforce_duration
+                    self.enforced_duration = enforce_duration
             else:
-                self.enforced_duration = self.program.enforce_duration
+                self.enforced_duration = self.program.cfg.enforce_duration
         else:
             if self.duration is not None:
                 self.enforced_duration = self.duration - 1
@@ -567,12 +569,13 @@ class Command:
                 self.enforced_duration = None
 
         if 'enforce_duration' in cmd_cfg:
-            if cmd_cfg.enforce_duration == True:
+            enforce_duration = cmd_cfg.formatted('enforce_duration', **self.dict())
+            if enforce_duration == True:
                 if self.duration is None:
                     log_fatal("Specified enforce duration = True with no duration specified")
                 self.enforced_duration = self.duration - 1
             else:
-                self.enforced_duration = cmd_cfg.formatted('enforce_duration')
+                self.enforced_duration = enforce_duration
 
     def dict(self, **kwargs):
         d = {}
