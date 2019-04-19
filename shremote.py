@@ -491,7 +491,7 @@ class Program:
         if self.stop is None:
             return None
         if delay is not None:
-            return 'sleep {} && {}'.format(
+            return 'sleep {}; {}'.format(
                     delay,
                     Config.format(self.stop, **kwargs)
             )
@@ -893,6 +893,21 @@ class TestRunner:
                     cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
                     call(cmd, check_return=0)
 
+    def kill_sleep(self):
+        killed_hosts = set()
+        for cmd in self.commands:
+            prog = cmd.program
+            hosts = prog.hosts
+            for i, host in hosts.items():
+                if host in killed_hosts:
+                    continue
+                ssh = host.ssh
+                cmd = SSH_CMD.format(cmd = 'pkill sleep', addr = host.addr, **ssh.dict)
+                call(cmd, check_return=False, raise_error=False)
+                log("Ran 'pkill sleep' on %s" % host.addr)
+                killed_hosts.add(host)
+
+
     def mkdirs(self):
         threads = []
         already_made = set()
@@ -1050,6 +1065,7 @@ if __name__ == '__main__':
     parser.add_argument('--get-only', action='store_true', help='only retrieve files')
     parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
     parser.add_argument('--out', type=str, default=".", help=('output directory'))
+    parser.add_argument('--no-kill-sleep', action='store_true', help='Prevents killing "sleep" at start of experiment')
     parser.add_argument('--args', type=str, required=False,
                         help='additional arguments for yml (format k1:v1;k2:v2')
 
@@ -1067,6 +1083,9 @@ if __name__ == '__main__':
             log("Adding arg: {} = {}".format(k, v))
 
     tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test, args_dict)
+
+    if not args.no_kill_sleep:
+        tester.kill_sleep()
 
     if args.stop_only:
         tester.stop_all()
