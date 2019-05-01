@@ -930,6 +930,26 @@ class TestRunner:
                 log("Ran 'pkill sleep' on %s" % host.addr)
                 killed_hosts.add(host)
 
+    def delete_dirs(self):
+        threads = []
+        already_deleted = set()
+        for cmd in self.commands:
+            prog = cmd.program
+            hosts = prog.hosts
+            for i, host in hosts.items():
+                if prog.log is None:
+                    continue
+                dir = prog.log.full_dir.format(i=i)
+                ssh = host.ssh
+
+                if (dir, host.addr) not in already_deleted:
+                    cmd = SSH_CMD.format(cmd = 'rm -rf %s' % dir, addr = host.addr, **ssh.dict)
+                    thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=False, raise_error=False))
+                    thread.start()
+                    threads.append(thread)
+                    already_deleted.add((dir, host.addr))
+        for thread in threads:
+            thread.join()
 
     def mkdirs(self):
         threads = []
@@ -1005,6 +1025,7 @@ class TestRunner:
     def stop_all(self):
         for command in self.sorted_commands:
             self.event_log.append(command.stop())
+
 
     def get_logs(self):
         call("mkdir -p %s" % self.output_dir, raise_error=True)
@@ -1096,6 +1117,7 @@ if __name__ == '__main__':
     parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
     parser.add_argument('--out', type=str, default=".", help=('output directory'))
     parser.add_argument('--no-kill-sleep', action='store_true', help='Prevents killing "sleep" at start of experiment')
+    parser.add_argument('--delete_log_dir', action='store_true', help='Deletes remote log directories')
     parser.add_argument('--args', type=str, required=False,
                         help='additional arguments for yml (format k1:v1;k2:v2')
 
@@ -1114,8 +1136,6 @@ if __name__ == '__main__':
 
     tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test, args_dict)
 
-    if not args.no_kill_sleep:
-        tester.kill_sleep()
 
     if args.stop_only:
         tester.stop_all()
@@ -1124,6 +1144,10 @@ if __name__ == '__main__':
     elif args.parse_test:
         tester.verify()
     else:
+        if not args.no_kill_sleep:
+            tester.kill_sleep()
+        if args.delete_log_dir:
+            tester.delete_dirs()
         tester.run()
         tester.close_log()
 
