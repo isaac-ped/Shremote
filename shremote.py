@@ -92,10 +92,10 @@ signal.signal(signal.SIGINT, sigint_handler)
 
 def call(cmd, enforce_duration=None, check_return=False, raise_error=False):
     log("Executing ", cmd)
-    if enforce_duration is not None:
-        log("Ensuring command executes for at least %d" % enforce_duration)
     start = time.time()
     try:
+        if enforce_duration is not None:
+            log("Ensuring command executes for at least %d" % enforce_duration)
         output = subprocess.check_output(cmd, shell=True)
         if len(output) > 0:
             log("Command ", cmd, "output: ", output)
@@ -839,6 +839,29 @@ class TestRunner:
             cmd = cmd.replace('\n', ' ')
             call(cmd, raise_error=True, check_return=check_rtn)
 
+    def verify_post_cmds(self):
+        log_info("Verifying post cmds")
+        if 'post_cmds' not in self.cfg:
+            return
+        for cmd, _ in self.cfg.post_cmds.items():
+            cmd = self.cfg.post_cmds.formatted(cmd)
+            if isinstance(cmd, Config):
+                cmd = cmd.formatted("cmd")
+            cmd = cmd.replace('\n', ' ')
+            log("Verified command {}".format(cmd))
+
+    def run_post_cmds(self):
+        if 'post_cmds' not in self.cfg:
+            return
+        for cmd, _ in self.cfg.post_cmds.items():
+            cmd = self.cfg.post_cmds.formatted(cmd)
+            check_rtn = 0
+            if isinstance(cmd, Config):
+                check_rtn = cmd.get('check_rtn', 0)
+                cmd = cmd.formatted('cmd')
+            cmd = cmd.replace('\n', ' ')
+            call(cmd, raise_error=True, check_return=check_rtn)
+
     def verify_files(self):
         log_info("Verifying files")
         for name, file in self.cfg.files.dict.items():
@@ -1023,6 +1046,12 @@ class TestRunner:
             log_error("Error verifying remote commands")
             raise
 
+        try:
+            self.verify_post_cmds()
+        except Exception as e:
+            log_error("Error verifying post cmds")
+            raise
+
     def run(self):
         self.verify()
 
@@ -1046,6 +1075,7 @@ class TestRunner:
 
         self.get_logs()
         self.write_log()
+        self.run_post_cmds()
 
         if self.do_export:
             self.export_logs()
