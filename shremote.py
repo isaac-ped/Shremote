@@ -362,7 +362,7 @@ class Log:
                 "Cannot locate logs in cfg.logs.dir, cfg.programs.log_dir or cfg.dirs.log_dir"
             )
 
-    def __init__(self, log_name, log_cfg):
+    def __init__(self, log_name, log_cfg, label=None):
         log("Initializing log {}".format(log_name))
         self.copied = defaultdict(lambda: False)
         self.cfg = log_cfg
@@ -370,6 +370,8 @@ class Log:
         self.has_dir = 'dir' in log_cfg
 
         self.log_dir = Log.get_log_dir()
+        if label:
+            self.log_dir = self.log_dir + '/' + label + '/'
 
         self.dir = log_cfg.get('dir', '')
         self.full_dir = Config.format(os.path.join(self.log_dir, self.dir, ''))
@@ -794,7 +796,7 @@ class TestRunner:
             for name, prog in self.cfg.programs.items():
                 if name != 'log_dir':
                     if 'log' in prog:
-                        Log(name, prog.log)
+                        Log(name, prog.log, label)
 
         self.programs = {}
         for name, prog in self.cfg.programs.items():
