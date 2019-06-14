@@ -517,6 +517,15 @@ def safe_eval(st, label=''):
         log_error("Error evaluating expression '{}' due to [{}]".format(label, e))
         raise
 
+def try_eval(raw, label):
+    try:
+        evaled = safe_eval(raw, label)
+        if str(evaled) != str(raw): # Means that 'eval' did something
+            log_warn("Specifying evaluatable begin without $(...) is deprecated: {}".format(raw))
+        return float(evaled)
+    except TypeError: # raw shouldn't have to be eval'd again
+        return float(raw)
+
 
 class Command:
 
@@ -528,36 +537,27 @@ class Command:
 
         if 'begin' in cmd_cfg:
             begin_raw = cmd_cfg.formatted('begin')
-            try:
-                begin_evaled = safe_eval(begin_raw, 'begin')
-                if str(begin_evaled) != str(begin_raw): # Means that 'eval' did something
-                    log_warn("Specifying evaluatable begin without $(...) is deprecated: {}".format(begin_raw))
-                self.begin = float(begin_evaled)
-            except TypeError: # Begin shouldn't have to be eval'd again
-                self.begin = float(begin_raw)
+            self.begin = try_eval(begin_raw, 'begin')
 
         self.index = index if index is not None else 0
         self.program = Program.get(program_name)
-
         self.log = Log.get(program_name)
         self.name = program_name
 
+        if self.program.start is None:
+            log_fatal("{}: Program requires a 'start' command".format(program_name))
+
         if 'duration' in cmd_cfg:
+            if self.program.stop is None:
+                log_fatal("{}: Must specify a 'stop' command if duration is specified".format(
+                          program_name))
             duration_raw = cmd_cfg.formatted('duration', **self.dict())
-            try:
-                dur = safe_eval(duration_raw, 'duration')
-                if str(dur) != str(duration_raw): # Means that 'eval' did something
-                    log_warn("Specifying evaluatable duration without $(...) is deprecated: {}".format(duration_raw))
-            except TypeError: ## This is fine, duration shouldn't have to be evaluated again
-                dur = duration_raw
-                pass
-
-            self.duration = float(dur)
-            if self.program.start is None:
-                log_fatal("{}: Cannot specify duration when program is missing 'start'".format(program_name))
+            self.duration =  float(try_eval(duration_raw, 'duration'))
         elif self.program.start is not None and self.program.stop is not None:
-                log_fatal("{}: Must specify duration if program contains both 'start' and 'stop'".format(program_name))
-
+                log_fatal(
+                    "{}: Must specify duration if program contains both 'start' and 'stop'".format(
+                    program_name)
+                )
 
         if 'enforce_duration' in self.program.cfg:
             enforce_duration = self.program.cfg.formatted('enforce_duration', **self.dict())
