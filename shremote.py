@@ -355,8 +355,12 @@ class Log:
             return Config.instance().logs.dir
         elif 'log_dir' in Config.instance().programs:
             return Config.instance().programs.log_dir
+        elif 'log_dir' in Config.instance().dirs:
+            return Config.instance().dirs.log_dir
         else:
-            raise Exception("Cannot locate logs in cfg.logs.dir or cfg.programs.log_dir")
+            raise Exception(
+                "Cannot locate logs in cfg.logs.dir, cfg.programs.log_dir or cfg.dirs.log_dir"
+            )
 
     def __init__(self, log_name, log_cfg):
         log("Initializing log {}".format(log_name))
@@ -769,7 +773,7 @@ class TestRunner:
             self.raw_cfg = yaml.load(f, Loader)
 
         call("mkdir -p %s" % self.output_dir, raise_error=True)
-        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir, 
+        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir,
                           local_out = self.output_dir)
         self.open_log()
         self.cfg.set_permanent(remote_out = Log.get_log_dir())
@@ -1136,7 +1140,6 @@ if __name__ == '__main__':
 
     tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test, args_dict)
 
-
     if args.stop_only:
         tester.stop_all()
     elif args.get_only:
@@ -1150,4 +1153,3 @@ if __name__ == '__main__':
             tester.delete_dirs()
         tester.run()
         tester.close_log()
-
