@@ -825,6 +825,8 @@ class TestRunner:
         shutil.copytree(self.output_dir, self.export_dir)
 
     def verify_init_cmds(self):
+        if 'init_cmds' not in self.cfg:
+            return
         log_info("Verifying init cmds")
         for cmd, _ in self.cfg.init_cmds.items():
             cmd = self.cfg.init_cmds.formatted(cmd)
@@ -834,6 +836,8 @@ class TestRunner:
             log("Verified command {}".format(cmd))
 
     def run_init_cmds(self):
+        if 'init_cmds' not in self.cfg:
+            return
         for cmd, _ in self.cfg.init_cmds.items():
             cmd = self.cfg.init_cmds.formatted(cmd)
             check_rtn = 0
@@ -867,6 +871,8 @@ class TestRunner:
             call(cmd, raise_error=True, check_return=check_rtn)
 
     def verify_files(self):
+        if 'files' not in self.cfg:
+            return
         log_info("Verifying files")
         for name, file in self.cfg.files.dict.items():
             log("Verifying {}".format(name))
@@ -895,6 +901,8 @@ class TestRunner:
                     log('Verified scp: {}'.format(cmd))
 
     def copy_files(self):
+        if 'files' not in self.cfg:
+            return
         for name, file in self.cfg.files.dict.items():
             src = file.formatted('src')
             dst = file.formatted('dst')
