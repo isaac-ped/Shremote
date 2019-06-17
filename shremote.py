@@ -558,7 +558,7 @@ class Command:
                 log_fatal("{}: Must specify a 'stop' command if duration is specified".format(
                           program_name))
             duration_raw = cmd_cfg.formatted('duration', **self.dict())
-            self.duration = float(try_eval(duration_raw, 'duration'))
+            self.duration = int(try_eval(duration_raw, 'duration'))
 
         #Enforce duration can be specified in the program or in the command
         self.enforced_duration = None
