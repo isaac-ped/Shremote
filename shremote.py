@@ -532,7 +532,6 @@ def try_eval(raw, label):
 
 
 # what happens if no begin is given?
-# Is duration checked to be a number?
 class Command:
 
     def __init__(self, program_name, cmd_cfg, index = None):
@@ -618,7 +617,7 @@ class Command:
             starts.append(cmd)
             host.execute(cmd, self.program.fg, self.enforced_duration, self.program.check_rtn)
 
-            if self.program.stop is not None:
+            if self.program.stop is not None and self.duration is not None:
                 stop_cmd = self.program.stop_cmd(self.duration, **cmd_kwargs)
                 stops.append(stop_cmd)
                 host.execute(stop_cmd, False, None, False)
@@ -893,7 +892,7 @@ class TestRunner:
                                              addr=addr, **ssh.dict)
                     cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
 
-                    log('Verfied mkdir: {}'.format(ssh_cmd))
+                    log('Verified mkdir: {}'.format(ssh_cmd))
                     log('Verified scp: {}'.format(cmd))
 
     def copy_files(self):
