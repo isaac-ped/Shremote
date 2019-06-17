@@ -95,7 +95,7 @@ def call(cmd, enforce_duration=None, check_return=False, raise_error=False):
     start = time.time()
     try:
         if enforce_duration is not None:
-            log("Ensuring command executes for at least %d" % enforce_duration)
+            log("Ensuring command executes for at least {}".format(enforce_duration))
         output = subprocess.check_output(cmd, shell=True)
         if len(output) > 0:
             log("Command ", cmd, "output: ", output)
@@ -531,6 +531,8 @@ def try_eval(raw, label):
         return float(raw)
 
 
+# what happens if no begin is given?
+# Is duration checked to be a number?
 class Command:
 
     def __init__(self, program_name, cmd_cfg, index = None):
@@ -556,36 +558,26 @@ class Command:
                 log_fatal("{}: Must specify a 'stop' command if duration is specified".format(
                           program_name))
             duration_raw = cmd_cfg.formatted('duration', **self.dict())
-            self.duration =  float(try_eval(duration_raw, 'duration'))
-        elif self.program.start is not None and self.program.stop is not None:
-                log_fatal(
-                    "{}: Must specify duration if program contains both 'start' and 'stop'".format(
-                    program_name)
-                )
+            self.duration = float(try_eval(duration_raw, 'duration'))
 
-        if 'enforce_duration' in self.program.cfg:
-            enforce_duration = self.program.cfg.formatted('enforce_duration', **self.dict())
-            if enforce_duration == True:
-                if self.duration is not None:
-                    self.enforced_duration = self.duration - 1
-                else:
-                    self.enforced_duration = enforce_duration
-            else:
-                self.enforced_duration = self.program.cfg.enforce_duration
-        else:
-            if self.duration is not None:
-                self.enforced_duration = self.duration - 1
-            else:
-                self.enforced_duration = None
-
+        #Enforce duration can be specified in the program or in the command
+        self.enforced_duration = None
+        enforce_duration_loc = None
         if 'enforce_duration' in cmd_cfg:
-            enforce_duration = cmd_cfg.formatted('enforce_duration', **self.dict())
+            enforce_duration_loc = cmd_cfg
+        elif 'enforce_duration' in self.program.cfg:
+            enforce_duration_loc = self.program.cfg
+
+        if enforce_duration_loc is not None:
+            enforce_duration = enforce_duration_loc.formatted('enforce_duration', **self.dict())
+            if not isinstance(enforce_duration, bool):
+                log_fatal("{}: enforce_duration must be a boolean".format(program_name))
             if enforce_duration == True:
                 if self.duration is None:
-                    log_fatal("Specified enforce duration = True with no duration specified")
+                    log_fatal(
+                        "{}: Specified enforce_duration with no duration specified".format(program_name)
+                    )
                 self.enforced_duration = self.duration - 1
-            else:
-                self.enforced_duration = enforce_duration
 
     def dict(self, **kwargs):
         d = {}
@@ -992,7 +984,7 @@ class TestRunner:
             thread.join()
 
     def show_commands(self):
-        log("*****  List of commands to run: ")
+        log_info("*****  List of commands to run: ")
         for command in self.sorted_commands:
             log(command.pretty())
 
