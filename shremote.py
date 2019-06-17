@@ -256,6 +256,8 @@ class Config(object):
     def formatted(self, key, **kwargs):
         if isinstance(self.dict[key], Config):
             return self.dict[key]
+        if isinstance(self.dict[key], bool):
+            return self.dict[key]
         if isinstance(self.dict[key], str):
             st = self.dict[key]
             while '{' in st:
