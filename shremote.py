@@ -102,10 +102,11 @@ def call(cmd, enforce_duration=None, check_return=False, raise_error=False):
     except CalledProcessError as err:
         if len(err.output) > 0:
             log("Command ", cmd, "output: ", err.output)
-        if check_return is not  False:
+        if check_return is not False:
+            #FIXME: this should look for 0, 137 (SIGINT) or 143 (SIGTERM)
             if err.returncode != check_return:
-                log_error("Command ", cmd, "\n\treturned: ", err.returncode,
-                          ". Expected: ", check_return,
+                log_error("Command ", cmd, "\n\treturned:", err.returncode,
+                          ". Expected:", check_return,
                           "\n\tIf this command should have executed anyway, add `check_rtn: False` to command")
                 log_error(traceback.format_exc())
                 error_event.set()
