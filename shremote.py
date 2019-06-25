@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from __future__ import print_function
 from collections import defaultdict
@@ -380,9 +380,8 @@ class Log:
             return Config.instance().dirs.log_dir
         else:
             log_warn("Cannot locate logs in cfg.logs.dir, cfg.programs.log_dir or cfg.dirs.log_dir.\
-                      Using Shremote directory.")
-            filename = getframeinfo(currentframe()).filename
-            return Path(filename).resolve().parent
+                      Using user home directory.")
+            return str(Path.home())
 
     def __init__(self, log_name, log_cfg, label=None):
         log("Initializing log {}".format(log_name))
@@ -534,7 +533,6 @@ class Program:
                 log_error("Error initializing program ", name)
                 raise
 
-# what happens if no begin is given?
 class Command:
 
     def __init__(self, program_name, cmd_cfg, index = None):
@@ -545,7 +543,7 @@ class Command:
 
         if 'begin' in cmd_cfg:
             begin_raw = cmd_cfg.formatted('begin')
-            self.begin = try_eval(begin_raw, 'begin')
+            self.begin = int(try_eval(begin_raw, 'begin'))
 
         self.index = index if index is not None else 0
         self.program = Program.get(program_name)
