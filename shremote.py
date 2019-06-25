@@ -527,10 +527,9 @@ def try_eval(raw, label):
         evaled = safe_eval(raw, label)
         if str(evaled) != str(raw): # Means that 'eval' did something
             log_warn("Specifying evaluatable begin without $(...) is deprecated: {}".format(raw))
-        return float(evaled)
+            return evaled
     except TypeError: # raw shouldn't have to be eval'd again
-        return float(raw)
-
+            return raw
 
 # what happens if no begin is given?
 class Command:
@@ -1037,7 +1036,6 @@ class TestRunner:
         for command in self.sorted_commands:
             self.event_log.append(command.stop())
 
-
     def get_logs(self):
         call("mkdir -p %s" % self.output_dir, raise_error=True)
 
@@ -1053,7 +1051,6 @@ class TestRunner:
 
         for filename in self.included_files:
             call('cp {} {}/'.format(filename, self.output_dir), raise_error=True)
-
 
     def write_log(self):
         output = open(os.path.join(self.output_dir, 'event_log.json'), 'w')
