@@ -19,6 +19,8 @@ import signal
 import traceback
 from threading import Thread
 import threading
+from inspect import currentframe, getframeinfo
+from pathlib import Path
 
 COLORS = dict(
     END='\033[0m',
@@ -89,6 +91,22 @@ def sigint_handler(signal, frame):
     log_fatal("CTRL+C PRESSED!!")
 
 signal.signal(signal.SIGINT, sigint_handler)
+
+def safe_eval(st, label=''):
+    try:
+        return eval(st)
+    except NameError as e:
+        log_error("Error evaluating expression '{}' due to [{}]".format(label, e))
+        raise
+
+def try_eval(raw, label):
+    try:
+        evaled = safe_eval(raw, label)
+        if str(evaled) != str(raw): # Means that 'eval' did something
+            log_warn("Specifying evaluatable without $(...) is deprecated: {}".format(raw))
+            return evaled
+    except TypeError: # raw shouldn't have to be eval'd again
+            return raw
 
 def call(cmd, enforce_duration=None, check_return=False, raise_error=False):
     log("Executing ", cmd)
@@ -361,9 +379,10 @@ class Log:
         elif 'log_dir' in Config.instance().dirs:
             return Config.instance().dirs.log_dir
         else:
-            raise Exception(
-                "Cannot locate logs in cfg.logs.dir, cfg.programs.log_dir or cfg.dirs.log_dir"
-            )
+            log_warn("Cannot locate logs in cfg.logs.dir, cfg.programs.log_dir or cfg.dirs.log_dir.\
+                      Using Shremote directory.")
+            filename = getframeinfo(currentframe()).filename
+            return Path(filename).resolve().parent
 
     def __init__(self, log_name, log_cfg, label=None):
         log("Initializing log {}".format(log_name))
@@ -374,7 +393,7 @@ class Log:
 
         self.log_dir = Log.get_log_dir()
         if label:
-            self.log_dir = self.log_dir + '/' + label + '/'
+            self.log_dir = os.path.join(self.log_dir, label, '')
 
         self.dir = log_cfg.get('dir', '')
         self.full_dir = Config.format(os.path.join(self.log_dir, self.dir, ''))
@@ -514,22 +533,6 @@ class Program:
             except:
                 log_error("Error initializing program ", name)
                 raise
-
-def safe_eval(st, label=''):
-    try:
-        return eval(st)
-    except NameError as e:
-        log_error("Error evaluating expression '{}' due to [{}]".format(label, e))
-        raise
-
-def try_eval(raw, label):
-    try:
-        evaled = safe_eval(raw, label)
-        if str(evaled) != str(raw): # Means that 'eval' did something
-            log_warn("Specifying evaluatable begin without $(...) is deprecated: {}".format(raw))
-            return evaled
-    except TypeError: # raw shouldn't have to be eval'd again
-            return raw
 
 # what happens if no begin is given?
 class Command:
