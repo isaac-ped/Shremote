@@ -568,16 +568,19 @@ class Command:
         elif 'enforce_duration' in self.program.cfg:
             enforce_duration_loc = self.program.cfg
 
+        #If specificed, default to self.duration or can take a value
         if enforce_duration_loc is not None:
             enforce_duration = enforce_duration_loc.formatted('enforce_duration', **self.dict())
-            if not isinstance(enforce_duration, bool):
-                log_fatal("{}: enforce_duration must be a boolean".format(program_name))
             if enforce_duration == True:
                 if self.duration is None:
                     log_fatal(
-                        "{}: Specified enforce_duration with no duration specified".format(program_name)
+                        "{}: Specified enforce_duration=True with no duration specified".format(program_name)
                     )
                 self.enforced_duration = self.duration - 1
+            elif isinstance(enforce_duration, int) and enforce_duration > 0:
+                self.enforced_duration = enforce_duration
+        elif self.duration is not None:
+            self.enforced_duration = self.duration - 1
 
     def dict(self, **kwargs):
         d = {}
