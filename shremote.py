@@ -160,7 +160,7 @@ class Config(object):
             raise Exception("Config instance not instantiated")
 
         # TODO: check if open bracket is matched
-        while len([m.start() for m in re.finditer('[^\\\\]\{', st)]) > 0:
+        while len([m.start() for m in re.finditer(r'[^\\]\{', st)]) > 0:
             st = st.replace('\{', '\{{')
             st = st.replace('\}', '\}}')
             try:
