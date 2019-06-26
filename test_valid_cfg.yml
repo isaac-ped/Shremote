@@ -1,0 +1,24 @@
+hosts:
+  dedos01:
+    addr: dedos01.cis.upenn.edu
+
+programs:
+  echo:
+    host: dedos01
+    start: echo {to_echo}
+
+commands:
+    - program:
+        start: echo "Hello World!"
+        host:
+          addr: dedos01.cis.upenn.edu
+      begin: 0
+
+    - program:
+        start: echo "Hello World!"
+        host: dedos01
+      begin: 0
+
+    - program: echo
+      to_echo: Hello World!
+      begin: 10

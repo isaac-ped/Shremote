@@ -1,0 +1,145 @@
+type: map
+
+fields:
+    - key: log_dir
+      format:
+          type: str
+      default: '~'
+
+    - key: ssh
+      format:
+          type: map
+          fields:
+                - key: user
+                  format:
+                    type: str
+                  default: "$USER"
+                - key: key
+                  format:
+                    type: str
+                  default: "~/.ssh/id_rsa"
+                - key: port
+                  format:
+                    type: int
+                  default: 22
+
+    - key: init_cmds
+      format: &CMD_FORMAT
+          type: list
+          format:
+                type: map
+                fields:
+                    - key: cmd
+                      format:
+                          type: str
+                      flags: [required]
+                    - &RTN_CHECK
+                      key: checked_rtn
+                      aliases: [check_rtn]
+                      format:
+                          type: [int, null]
+                      default: 0
+
+    - key: post_cmds
+      format: *CMD_FORMAT
+
+    - key: hosts
+      format:
+          type: map
+          format:
+                type: map
+                fields:
+                    - key: addr
+                      format:
+                          type: str
+                      flags: [required]
+                    - key: ssh
+                      format:
+                          type: override
+                          overrides: [ssh]
+                    - key: log_dir
+                      format:
+                          type: override
+                          overrides: [log_dir]
+
+    - key: files
+      format:
+          type: map
+          format:
+                type: map
+                fields:
+                      - key: src
+                        format:
+                            type: str
+                        flags: [required]
+                      - key: dst
+                        format:
+                            type: str
+                        flags: [required]
+                      - key: host
+                        format:
+                            type: reference
+                            referent: [hosts]
+
+    - key: programs
+      format:
+          type: map
+          format:
+                type: map
+                fields:
+                    - key: host
+                      format:
+                          type: reference
+                          referent: [hosts]
+                      flags: [list_ok]
+                    - key: start
+                      format:
+                          type: str
+                      flags: [required]
+                    - key: stop
+                      format:
+                          type: str
+                    - key: log
+                      format:
+                          type: map
+                          fields:
+                                - key: dir
+                                  default: ''
+                                  format:
+                                      type: str
+                                - key: out
+                                  format:
+                                      type: str
+                                - key: err
+                                  format:
+                                      type: str
+                    - key: enforced_duration
+                      aliases: [enforce_duration]
+                      format:
+                          type: [int, bool, null]
+                      default: true
+                    - *RTN_CHECK
+
+    - key: commands
+      format:
+          type: list
+          format:
+                type: map
+                fields:
+                      - key: program
+                        format:
+                            type: reference
+                            referent: [programs]
+                        flags: [required]
+                      - key: host
+                        format:
+                            type: inherit
+                            parent: [program, host]
+                        flags: [required]
+                      - key: begin
+                        format:
+                            type: float
+                        flags: [required, list_ok]
+                      - key: duration
+                        format:
+                            type: float
