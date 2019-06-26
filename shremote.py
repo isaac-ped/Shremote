@@ -159,14 +159,18 @@ class Config(object):
         if cls.instance_ is None:
             raise Exception("Config instance not instantiated")
 
-        # TODO: Regex match, in case string contains \{
-        while '{' in st:
+        # TODO: check if open bracket is matched
+        while len([m.start() for m in re.finditer('[^\\\\]\{', st)]) > 0:
+            st = st.replace('\{', '\{{')
+            st = st.replace('\}', '\}}')
             try:
                 st = st.format(cls.instance_, **kwargs)
             except Exception as e:
                 log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
                 raise
 
+        st = st.replace('\{', '{')
+        st = st.replace('\}', '}')
         return cls.eval(st)
 
     @staticmethod
