@@ -43,6 +43,18 @@ class ConfigFormatter(object):
         self._fix_cfg_format(cfg, [], self.format, None, True)
         return cfg
 
+    def _get_reference_fmt(self, referent_path):
+        reference_fmt = self.format
+        for keyname in referent_path:
+            for field in reference_fmt['fields']:
+                if field['key'] == keyname:
+                    reference_fmt = field['format']
+                    break
+            else:
+                raise CfgFormatFileException("Reference format {} does not exist in cfg format file".format(fmt_referent_name))
+        return reference_fmt
+
+
     def _fix_cfg_format(self, cfg, field_path, fmt, parent_fmt, exists):
         if isinstance(fmt['type'], list) or fmt['type'] in self.TYPES:
             if cfg.haspath(field_path):
@@ -64,21 +76,14 @@ class ConfigFormatter(object):
                 for i in range(len(cfg.getpath(field_path))):
                     self._fix_cfg_format(cfg, field_path + [i], sub_fmt, fmt, exists)
         elif fmt['type'] == 'reference':
+            print(field_path, "reference")
             referent_path = fmt['referent']
-            print(field_path)
             if cfg.haspath(field_path) and cfg.getpath(field_path).is_leaf():
                 cfg_entry = cfg.getpath(field_path)
                 referent = cfg.getpath(referent_path + [cfg_entry.format()])
                 cfg.setpath(field_path, referent)
             else:
-                reference_fmt = self.format
-                for keyname in referent_path:
-                    for field in reference_fmt['fields']:
-                        if field['key'] == keyname:
-                            reference_fmt = field['format']
-                            break
-                    else:
-                        raise CfgFormatFileException("Reference format {} does not exist in cfg format file".format(fmt_referent_name))
+                reference_fmt = self._get_reference_fmt(referent_path)
                 if reference_fmt['type'] != 'map' or 'format' not in reference_fmt:
                     raise CfgFormatFileException("Reference format {} is not an unspecified map type".format(referent_path))
                 reference_fmt = reference_fmt['format']
@@ -86,24 +91,26 @@ class ConfigFormatter(object):
                 self._fix_cfg_format(cfg, field_path, reference_fmt, cfg.haspath(field_path), cfg.haspath(field_path))
         elif fmt['type'] == 'inherit':
             if cfg.haspath(field_path):
+                inherited_field = None
                 inherited_fmt = parent_fmt
                 for inherited_field_name in fmt['parent']:
-                    if inherited_field_name == '_':
-                        inherited_fmt = self.format
-                        break
                     for field in inherited_fmt['fields']:
                         if field['key'] == inherited_field_name:
+                            inherited_field = field
                             inherited_fmt = field['format']
+                            if inherited_fmt['type'] == 'reference':
+                                inherited_field = self._get_reference_fmt(inherited_fmt['referent'])
+                                inherited_fmt = inherited_field['format']
                             break
                     else:
                         raise CfgFormatFileException("Parent format {} does not exist in {}".format(inherited_field_name, inherited_field))
-                self._fix_cfg_format(cfg, field_path, inherited_fmt, None, True)
+                print("Fixing" + str(field_path) + str(inherited_field))
+                self._fix_cfg_field(cfg, field_path[:-1], inherited_field, None, True)
             else:
                 parent_path = field_path[:-1] + fmt['parent']
                 if not cfg.haspath(parent_path):
                     raise CfgFormatException("Config lacks paths {} and {}".format(field_path, parent_path))
                 cfg.setpath(field_path, cfg.getpath(parent_path))
-                print("Set path {}".format(field_path))
         elif fmt['type'] == 'override':
             override = fmt['overrides']
             if not cfg.haspath(field_path):
@@ -111,14 +118,7 @@ class ConfigFormatter(object):
                     raise CfgFormatException("Config lacks paths {} and {}".format(field_path, override))
                 cfg.setpath(field_path, cfg.getpath(override))
             else:
-                reference_fmt = self.format
-                for keyname in override:
-                    for field in reference_fmt['fields']:
-                        if field['key'] == keyname:
-                            reference_fmt = field['format']
-                            break
-                    else:
-                        raise CfgFormatFileException("Overridden format {} DNE in cfg format file".format(reference_fmt))
+                reference_fmt = self._get_reference_fmt(override)
                 if reference_fmt['type'] != 'map' or 'fields' not in reference_fmt:
                     raise CfgFormatFileException("Reference format {} is not specified map type"
                                                  .format(override))
@@ -139,6 +139,9 @@ class ConfigFormatter(object):
             raw_cfg = cfg.getpath(keypath).get_raw()
             if not isinstance(raw_cfg, list):
                 cfg.setpath(keypath, [raw_cfg])
+                print("Set" + str(keypath) +"to list")
+            else:
+                print(str(keypath)+  "already")
 
             if not field['format']['type'] == 'list':
                 list_fmt = {'type': 'list', 'format': field['format']}
