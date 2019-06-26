@@ -76,18 +76,19 @@ class ConfigFormatter(object):
                 for i in range(len(cfg.getpath(field_path))):
                     self._fix_cfg_format(cfg, field_path + [i], sub_fmt, fmt, exists)
         elif fmt['type'] == 'reference':
-            print(field_path, "reference")
             referent_path = fmt['referent']
             if cfg.haspath(field_path) and cfg.getpath(field_path).is_leaf():
                 cfg_entry = cfg.getpath(field_path)
-                referent = cfg.getpath(referent_path + [cfg_entry.format()])
+                ref_path = referent_path + [cfg_entry.format()]
+                if not cfg.haspath(ref_path):
+                    raise CfgFormatException("Path {} does not exist in config".format(ref_path))
+                referent = cfg.getpath(ref_path)
                 cfg.setpath(field_path, referent)
-            else:
+            elif cfg.haspath(field_path):
                 reference_fmt = self._get_reference_fmt(referent_path)
                 if reference_fmt['type'] != 'map' or 'format' not in reference_fmt:
                     raise CfgFormatFileException("Reference format {} is not an unspecified map type".format(referent_path))
                 reference_fmt = reference_fmt['format']
-
                 self._fix_cfg_format(cfg, field_path, reference_fmt, cfg.haspath(field_path), cfg.haspath(field_path))
         elif fmt['type'] == 'inherit':
             if cfg.haspath(field_path):
@@ -104,7 +105,6 @@ class ConfigFormatter(object):
                             break
                     else:
                         raise CfgFormatFileException("Parent format {} does not exist in {}".format(inherited_field_name, inherited_field))
-                print("Fixing" + str(field_path) + str(inherited_field))
                 self._fix_cfg_field(cfg, field_path[:-1], inherited_field, None, True)
             else:
                 parent_path = field_path[:-1] + fmt['parent']
@@ -139,10 +139,6 @@ class ConfigFormatter(object):
             raw_cfg = cfg.getpath(keypath).get_raw()
             if not isinstance(raw_cfg, list):
                 cfg.setpath(keypath, [raw_cfg])
-                print("Set" + str(keypath) +"to list")
-            else:
-                print(str(keypath)+  "already")
-
             if not field['format']['type'] == 'list':
                 list_fmt = {'type': 'list', 'format': field['format']}
                 field['format'] = list_fmt
