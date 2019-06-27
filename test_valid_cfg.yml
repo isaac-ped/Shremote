@@ -1,11 +1,17 @@
 hosts:
   dedos01:
     addr: dedos01.cis.upenn.edu
+  dedos02:
+    addr: dedos02.cis.upenn.edu
 
 programs:
   echo:
-    host: dedos01
     start: echo {to_echo}
+    host: dedos02
+
+time_b: $( 15 + 2 )
+
+time: $( 10 + 5 + {0.time_b} )
 
 commands:
     - program:
@@ -16,9 +22,11 @@ commands:
 
     - program:
         start: echo "Hello World!"
-        host: dedos01
-      begin: 0
+      host: [dedos01, dedos02]
+      begin: '1.5'
 
     - program: echo
-      to_echo: Hello World!
-      begin: 10
+      host: dedos01
+      to_echo: '{i}'
+      stuff: things
+      begin: '{0.time}'

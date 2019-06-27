@@ -43,6 +43,22 @@ class ConfigFormatter(object):
     def format_cfg(self, raw_cfg):
         cfg = ConfigEntry(raw_cfg)
         self._expand_cfg_format(cfg, [], self.format, None, True)
+        cfg.enable_computed_fields()
+        for child in cfg.children(recursive=True):
+            try:
+                if child.is_leaf():
+                    child.format()
+            except ValueError as e:
+                raise CfgFormatException(
+                        "Error casting config entry {} to one of {}: {}"
+                        .format(child.get_name(), child.get_types(),  e)
+                )
+            except KeyError as e:
+                raise CfgFormatException(
+                        "Error formatting config entry {}: {}"
+                        .format(child.get_name(), e)
+                )
+        cfg.disable_computed_fields()
         return cfg
 
     def _get_reference_fmt(self, referent_path):
@@ -68,12 +84,21 @@ class ConfigFormatter(object):
                 sub_fmt = fmt['format']
                 for cfg_field in cfg.getpath(field_path):
                     self._expand_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt, exists)
+        if 'computed_fields' in fmt:
+            cfg_entry = cfg.getpath(field_path)
+            for field in fmt['computed_fields']:
+                cfg_entry.add_computed_field(field['key'], self.TYPES[field['format']['type']])
+        if 'flags' in fmt and 'formattable' in fmt['flags']:
+            if cfg.haspath(field_path):
+                cfg.getpath(field_path).set_formattable()
+
 
     def _expand_cfg_primitive(self, cfg, field_path, fmt, exists):
         if cfg.haspath(field_path):
             types = fmt['type'] if isinstance(fmt['type'], list) else [fmt['type']]
             for type_ in types:
-                cfg.getpath(field_path).allow_type(self.TYPES[type_])
+                cfg_entry = cfg.getpath(field_path)
+                cfg_entry.allow_type(self.TYPES[type_])
 
     def _expand_cfg_list(self, cfg, field_path, fmt, exists):
         if cfg.haspath(field_path):
@@ -99,7 +124,8 @@ class ConfigFormatter(object):
                         "Reference format {} is not an unspecified map type"
                         .format(referent_path))
             reference_fmt = reference_fmt['format']
-            self._expand_cfg_format(cfg, field_path, reference_fmt, cfg.haspath(field_path), cfg.haspath(field_path))
+            exists = exists and cfg.haspath(field_path)
+            self._expand_cfg_format(cfg, field_path, reference_fmt, None, exists)
 
     def _expand_cfg_inherit(self, cfg, field_path, fmt, parent_fmt, exists):
         if cfg.haspath(field_path):
@@ -322,29 +348,53 @@ class ConfigEntry(object):
         else:
             self.__root = root
 
-        self.__format_kwarg_objs = []
+        self.__formattable = False
+        self.__format_kwarg_obj = None
 
+        self.__computed_subfields = {}
+        self.__default_computed_subfields_enabled = False
         if isinstance(raw_entry, dict):
             self.__subfields = {}
             for k, v in raw_entry.items():
-                self.__subfields[k] = ConfigEntry(v, path + [k], root)
+                self.__subfields[k] = ConfigEntry(v, path + [k], self.__root)
             self.__leaf = False
         elif isinstance(raw_entry, list):
             self.__subfields = []
             for i, v in enumerate(raw_entry):
-                self.__subfields.append(ConfigEntry(v, path + [i], root))
+                self.__subfields.append(ConfigEntry(v, path + [i], self.__root))
             self.__leaf = False
         else:
             self.__leaf = True
 
-    def add_format_obj(self, obj):
-        if isinstance(obj, dict):
-            obj = ConfigEntry(obj)
-        if not isinstance(obj, ConfigEntry):
-            raise CfgFormatException("Cannot format ConfgEntry with non-map/dict {}".format(obj))
-        if not obj.is_map():
-            raise CfgFormatException("Object {} is not a map".format(obj.get_name()))
-        self.__format_kwarg_objs.append(obj)
+    def set_formattable(self):
+        if not self.is_map():
+            raise CfgFormatException("Only map-based containers can be set to formattable")
+        self.__format_kwarg_obj = self
+        self.__formattable = True
+        for child in self.children():
+            child._set_format_obj(self)
+
+    def _set_format_obj(self, obj):
+        self.__format_kwarg_obj = obj
+        self.__formattable = True
+        for child in self.children():
+            child._set_format_obj(obj)
+
+    def enable_computed_fields(self):
+        self.__default_computed_subfields_enabled = True
+        for child in self.children():
+            child.enable_computed_fields()
+
+    def add_computed_field(self, key, type_):
+        self.__computed_subfields[key] = type_
+
+    def get_computed_field_keys(self):
+        return self.__computed_subfields.keys()
+
+    def disable_computed_fields(self):
+        self.__default_computed_subfields_enabled = False
+        for child in self.children():
+            child.disable_computed_fields()
 
     def pformat(self):
         return pprint.pformat(self.get_raw())
@@ -353,10 +403,10 @@ class ConfigEntry(object):
         return self.__name
 
     def is_list(self):
-        return isinstance(self.__subfields, list)
+        return not self.__leaf and isinstance(self.__subfields, list)
 
     def is_map(self):
-        return isinstance(self.__subfields, dict)
+        return not self.__leaf and isinstance(self.__subfields, dict)
 
     def is_leaf(self):
         return self.__leaf
@@ -403,6 +453,18 @@ class ConfigEntry(object):
         else:
             self.__types.append(_type)
 
+    def get_types(self):
+        return self.__types
+
+    def _get_computed_field(self, key):
+        if key not in self.__computed_subfields:
+            raise AttributeError("Config entry '%s' does not contain key: '%s'" %
+                                 (self.__name, key))
+        if not self.__default_computed_subfields_enabled:
+            raise AttributeError("Config entry '%s' requested computed subfield: '%s' "
+                    "which was not provided to formatter" % (self.__name, key))
+        return self.__computed_subfields[key]()
+
     def _assert_not_leaf(self, key):
         if self.__leaf:
             raise AttributeError("Config entry %s does not have %s: it is a leaf" %
@@ -414,22 +476,51 @@ class ConfigEntry(object):
             raise AttributeError("Config entry %s does not have %s: it is a list" %
                                 (self.__name, key))
 
+    def keys(self):
+        for x in self.__subfields.keys():
+            yield x
+        if self.__default_computed_subfields_enabled:
+            for x in self.__computed_subfields.keys():
+                yield x
+
     def items(self):
         if not self.is_map():
             raise CfgFormatException("Item {} is not a map".format(self.__name))
-        return self.__subfields.items()
+        for x in self.__subfields.items():
+            yield x
 
-    def __deepcopy__(self):
-        cpy = copy.deepcopy(self.__subfields)
-        return ConfigEntry(cpy, self.__path, self.__root)
+    def children(self, recursive = False):
+        if self.is_map():
+            for v in self.__subfields.values():
+                if recursive and not v.is_leaf():
+                    for vv in v.children(recursive):
+                        yield vv
+                yield v
+        elif self.is_list():
+            for v in self.__subfields:
+                if recursive and not v.is_leaf():
+                    for vv in v.children(recursive):
+                        yield vv
+                yield v
+
+
+    def __deepcopy__(self, memo):
+        if self.__leaf:
+            return self.__raw
+        subf_copy = copy.deepcopy(self.__subfields, memo)
+        cpy = ConfigEntry(subf_copy, self.__path, self.__root)
+        for cfk, cfv in self.__computed_subfields.items():
+            cpy.add_computed_field(cfk, cfv)
+        if self.__default_computed_subfields_enabled:
+            cpy.enable_computed_fields()
+        return cpy
 
     def __getattr__(self, key):
         if key.startswith('_ConfigEntry'):
             return super(ConfigEntry, self).__getattribute__(key.replace("_ConfigEntry", ""))
         self._assert_has_attrs(key)
         if key not in self.__subfields:
-            raise AttributeError("Config entry '%s' does not contain key: '%s'" %
-                                 (self.__name, key))
+            return self._get_computed_field(key)
         return self.__subfields[key]
 
     def __setattr__(self, key, value):
@@ -444,6 +535,8 @@ class ConfigEntry(object):
 
     def __getitem__(self, key):
         self._assert_not_leaf(key)
+        if self.is_map() and key not in self.__subfields:
+            return self._get_computed_field(key)
         return self.__subfields[key]
 
     def __contains__(self, key):
@@ -466,6 +559,9 @@ class ConfigEntry(object):
         else:
             return len(self.__subfields)
 
+    def __str__(self):
+        return str(self.format())
+
     @staticmethod
     def innermost_exec_str(st):
         # To start, find all $( which aren't $$(
@@ -486,16 +582,6 @@ class ConfigEntry(object):
             raise BadExecException("Cannot find end of exec string: {}".format(st[last_match_idx:]))
         return st[start_idx:end_idx+1]
 
-    @staticmethod
-    def generous_cast(value):
-        try:
-            return int(value)
-        except:
-            try:
-                return float(value)
-            except:
-                return value
-
     @classmethod
     def do_eval(cls, value):
         if not isinstance(value, str):
@@ -504,21 +590,48 @@ class ConfigEntry(object):
         while eval_grp is not None:
             # Cut off the starting $, leaving (...)
             to_eval = eval_grp[1:]
-            rep_with = str(eval(value))
+            rep_with = str(eval(to_eval))
             value = value.replace(eval_grp, rep_with)
             eval_grp = cls.innermost_exec_str(value)
-        else:
-            return cls.generous_cast(value)
+        return value
 
     def format(self, **kwargs):
+        if not self.__formattable:
+            return self.__raw
+        if self.__format_kwarg_obj is not None:
+            kwargobj = copy.deepcopy(self.__format_kwarg_obj)
+            for k, v in kwargs.items():
+                kwargobj[k] = v
+        else:
+            kwargobj = kwargs
         if not self.__leaf:
-            raise AttributeError("Attempted to format non-leaf attribute %s" % self.__name)
+            return self.get_raw()
         if isinstance(self.__raw, str):
             formatted = self.__raw
             while '{' in formatted:
-                formatted = formatted.format(self.__root, **kwargs)
                 try:
-                    formatted = str(self.do_eval(formatted))
+                    formatted = formatted.format(self.__root, **kwargobj)
+                except Exception as e:
+                    if self.__format_kwarg_obj is not None:
+                        error_due_to_computed_fields = False
+                        self.__format_kwarg_obj.enable_computed_fields()
+                        try:
+                            self.format(**kwargs)
+                            error_due_to_computed_fields = True
+                        except Exception as e:
+                            pass
+                        self.__format_kwarg_obj.disable_computed_fields()
+
+                        if error_due_to_computed_fields:
+                            computed_keys = self.__format_kwarg_obj.get_computed_field_keys()
+                            raise CfgFormatException(
+                                "Error formatting field {} '{}' due to unprovided field "
+                                "(one of {})"
+                                .format(self.__name, formatted, computed_keys)
+                            )
+                    raise
+                try:
+                    formatted = self.do_eval(formatted)
                 except:
                     pass
             evaled = self.do_eval(formatted)
@@ -529,13 +642,15 @@ class ConfigEntry(object):
                         evaled = __type(evaled)
                         casted = True
                         break
-                    except:
+                    except ValueError as e:
+                        raise
                         pass
                 if not casted:
                     raise CfgFormatException("Could not cast {} to {} for {}"
                             .format(evaled, self.__types, self.__name))
                 evaled = __type(evaled)
             return evaled
+        return self.__raw
 
     def formatted(self, key, **kwargs):
         self._assert_has_attrs(key)
@@ -544,4 +659,10 @@ class ConfigEntry(object):
 if __name__ == '__main__':
     fmtr = ConfigFormatter(yaml.load(open('cfg_format.yml', 'r'), yaml.SafeLoader))
     raw_cfg = yaml.load(open('test_valid_cfg.yml'), IncludeLoader)
-    print(fmtr.format_cfg(raw_cfg).pformat())
+    cfg = fmtr.format_cfg(raw_cfg)
+
+    print(cfg.pformat())
+    for cmd in cfg.commands:
+        start = cmd.program.start.format(i=0)
+        begin = cmd.begin[0].format()
+        print("Comnand '{}'\n\tstarts at time {}".format(start, begin))
