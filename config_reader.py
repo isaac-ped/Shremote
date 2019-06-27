@@ -32,15 +32,17 @@ class ConfigFormatter(object):
                 'str': str,
                 None: lambda: None}
 
+    FLAGS = ('required', 'list_ok', 'formattable')
+
     def __init__(self, format):
         self.format = format
         self._names = {}
-        self._verify_format(format, '')
-        self._check_verification(format, '')
+        self._verify_fmt_format(format, '')
+        self._check_unused_fmt_fields(format, '')
 
     def format_cfg(self, raw_cfg):
         cfg = ConfigEntry(raw_cfg)
-        self._fix_cfg_format(cfg, [], self.format, None, True)
+        self._expand_cfg_format(cfg, [], self.format, None, True)
         return cfg
 
     def _get_reference_fmt(self, referent_path):
@@ -51,11 +53,14 @@ class ConfigFormatter(object):
                     reference_fmt = field['format']
                     break
             else:
-                raise CfgFormatFileException("Reference format {} does not exist in cfg format file".format(fmt_referent_name))
+                raise CfgFormatFileException(
+                        "Reference format {} does not exist in cfg format file"
+                        .format(fmt_referent_name)
+                      )
         return reference_fmt
 
 
-    def _fix_cfg_format(self, cfg, field_path, fmt, parent_fmt, exists):
+    def _expand_cfg_format(self, cfg, field_path, fmt, parent_fmt, exists):
         if isinstance(fmt['type'], list) or fmt['type'] in self.TYPES:
             if cfg.haspath(field_path):
                 types = fmt['type'] if isinstance(fmt['type'], list) else [fmt['type']]
@@ -64,17 +69,17 @@ class ConfigFormatter(object):
         elif fmt['type'] == 'map':
             if 'fields' in fmt:
                 for field in fmt['fields']:
-                    self._fix_cfg_field(cfg, field_path, field, fmt, exists)
+                    self._expand_cfg_field(cfg, field_path, field, fmt, exists)
             if 'format' in fmt:
                 if cfg.haspath(field_path):
                     sub_fmt = fmt['format']
                     for cfg_field in cfg.getpath(field_path):
-                        self._fix_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt, exists)
+                        self._expand_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt, exists)
         elif fmt['type'] == 'list':
             if cfg.haspath(field_path):
                 sub_fmt = fmt['format']
                 for i in range(len(cfg.getpath(field_path))):
-                    self._fix_cfg_format(cfg, field_path + [i], sub_fmt, fmt, exists)
+                    self._expand_cfg_format(cfg, field_path + [i], sub_fmt, fmt, exists)
         elif fmt['type'] == 'reference':
             referent_path = fmt['referent']
             if cfg.haspath(field_path) and cfg.getpath(field_path).is_leaf():
@@ -89,7 +94,7 @@ class ConfigFormatter(object):
                 if reference_fmt['type'] != 'map' or 'format' not in reference_fmt:
                     raise CfgFormatFileException("Reference format {} is not an unspecified map type".format(referent_path))
                 reference_fmt = reference_fmt['format']
-                self._fix_cfg_format(cfg, field_path, reference_fmt, cfg.haspath(field_path), cfg.haspath(field_path))
+                self._expand_cfg_format(cfg, field_path, reference_fmt, cfg.haspath(field_path), cfg.haspath(field_path))
         elif fmt['type'] == 'inherit':
             if cfg.haspath(field_path):
                 inherited_field = None
@@ -105,7 +110,7 @@ class ConfigFormatter(object):
                             break
                     else:
                         raise CfgFormatFileException("Parent format {} does not exist in {}".format(inherited_field_name, inherited_field))
-                self._fix_cfg_field(cfg, field_path[:-1], inherited_field, None, True)
+                self._expand_cfg_field(cfg, field_path[:-1], inherited_field, None, True)
             else:
                 parent_path = field_path[:-1] + fmt['parent']
                 if not cfg.haspath(parent_path):
@@ -122,11 +127,11 @@ class ConfigFormatter(object):
                 if reference_fmt['type'] != 'map' or 'fields' not in reference_fmt:
                     raise CfgFormatFileException("Reference format {} is not specified map type"
                                                  .format(override))
-                self._fix_cfg_format(cfg, field_path, reference_fmt, parent_fmt, True)
+                self._expand_cfg_format(cfg, field_path, reference_fmt, parent_fmt, True)
         else:
             raise Exception("HOW DID YOU DO THIS")
 
-    def _fix_cfg_field(self, cfg, field_path, field, parent_fmt, exists=True):
+    def _expand_cfg_field(self, cfg, field_path, field, parent_fmt, exists):
         field_required = 'required' in field['flags']
         list_ok = 'list_ok' in field['flags']
         key = field['key']
@@ -143,38 +148,38 @@ class ConfigFormatter(object):
                 list_fmt = {'type': 'list', 'format': field['format']}
                 field['format'] = list_fmt
 
-        self._fix_cfg_format(cfg, keypath, field['format'], parent_fmt, exists)
+        self._expand_cfg_format(cfg, keypath, field['format'], parent_fmt, exists)
 
         if exists and field_required and not cfg.haspath(keypath):
-            raise CfgFormatException("Entry {} DNE in config".format(keypath))
+            raise CfgFormatException("Required field {} does not exist in config".format(keypath))
 
 
-    def _check_verification(self, format, name):
+    def _check_unused_fmt_fields(self, format, name):
         if name not in self._names:
             raise CfgFormatFileException("Unused field: %s" % name)
         if isinstance(format, list):
             for i, elem in enumerate(format):
                 ename = name + '[%d]' % i
-                self._check_verification(elem, ename)
+                self._check_unused_fmt_fields(elem, ename)
         elif isinstance(format, dict):
             for k, elem in format.items():
                 vname = name + '.' + k
-                self._check_verification(elem, vname)
+                self._check_unused_fmt_fields(elem, vname)
 
-    def _verify(self, elem, name, key, type_=None, optional=False):
+    def _verify_fmt(self, elem, name, key, type_=None, optional=False):
         if optional and key not in elem:
             if type_ is not None:
                 elem[key] = type_()
             else:
                 elem[key] = None
-        sub, sname = self._get(elem, name, key)
+        sub, sname = self._get_fmt(elem, name, key)
         if type_ is not None and not isinstance(elem[key], type_):
             raise wrong_type_exception(sname, type(elem[key]), type_)
         if isinstance(sub, list):
             for i, _ in enumerate(sub):
                 self._names[sname + '[%d]' % i] = sub
 
-    def _get(self, elem, name, key):
+    def _get_fmt(self, elem, name, key):
         subname = name + '.' + key
         if key not in elem:
             raise missing_field_exception(name, key)
@@ -188,68 +193,85 @@ class ConfigFormatter(object):
             verifier(lelem, name + '[%d]' % i)
 
     @verifier
-    def _verify_map_type(self, elem, name):
+    def _verify_fmt_map_type(self, elem, name):
         if (('fields' in elem) == ('format' in elem)):
             raise CfgFormatFileException("Must specify exactly one of 'fields' or 'format' in {}"
                                          .format(name))
         if 'fields' in elem:
-            fields, fname = self._get(elem, name, 'fields')
-            self._verify_fields(fields, fname)
+            fields, fname = self._get_fmt(elem, name, 'fields')
+            self._verify_fmt_fields(fields, fname)
         if 'format' in elem:
-            fmt, fname = self._get(elem, name,  'format')
-            self._verify_format(fmt, fname)
+            fmt, fname = self._get_fmt(elem, name,  'format')
+            self._verify_fmt_format(fmt, fname)
+        if 'computed_fields' in elem:
+            fields, fname = self._get_fmt(elem, name, 'computed_fields')
+            self._verify_fmt_fields(fields, fname)
+        if 'flags' in elem:
+            flags, fname = self._get_fmt(elem, name, 'flags')
+            self._verify_flags(flags, fname)
 
     @verifier
-    def _verify_list_type(self, elem, name):
-        fmts, fname = self._get(elem, name, 'format')
-        self._verify_format(fmts, fname)
+    def _verify_fmt_list_type(self, elem, name):
+        fmts, fname = self._get_fmt(elem, name, 'format')
+        self._verify_fmt_format(fmts, fname)
 
     @verifier
-    def _verify_reference_type(self, elem, name):
-        self._verify(elem, name, 'referent', list)
+    def _verify_fmt_reference_type(self, elem, name):
+        self._verify_fmt(elem, name, 'referent', list)
 
     @verifier
-    def _verify_inherit_type(self, elem, name):
-        self._verify(elem, name, 'parent', list)
+    def _verify_fmt_inherit_type(self, elem, name):
+        self._verify_fmt(elem, name, 'parent', list)
 
     @verifier
-    def _verify_override_type(self, elem, name):
-        self._verify(elem, name, 'overrides', list)
+    def _verify_fmt_override_type(self, elem, name):
+        self._verify_fmt(elem, name, 'overrides', list)
 
     @verifier
-    def _verify_format(self, elem, name):
-        etype, tname = self._get(elem, name, 'type')
+    def _verify_fmt_format(self, elem, name):
+        etype, tname = self._get_fmt(elem, name, 'type')
         if isinstance(etype, list):
-            self._verify(elem, name, 'type', list)
+            self._verify_fmt(elem, name, 'type', list)
             if not all([et in self.TYPES for et in etype]):
                 raise CfgFormatFileException("For reference element {}: not all types are basic".format(name))
             return
 
         if etype == 'map':
-            self._verify_map_type(elem, name)
+            self._verify_fmt_map_type(elem, name)
         elif etype == 'list':
-            self._verify_list_type(elem, name)
+            self._verify_fmt_list_type(elem, name)
         elif etype == 'reference':
-            self._verify_reference_type(elem, name)
+            self._verify_fmt_reference_type(elem, name)
         elif etype == 'inherit':
-            self._verify_inherit_type(elem, name)
+            self._verify_fmt_inherit_type(elem, name)
         elif etype == 'override':
-            self._verify_override_type(elem, name)
+            self._verify_fmt_override_type(elem, name)
         elif etype not in self.TYPES:
             raise CfgFormatFileException("Unknown type {} for {}".format(etype, tname))
 
     @verifier
-    def _verify_field_elem(self, elem, name):
-        self._verify(elem, name, 'key', str)
-        fmts, fname = self._get(elem, name, 'format')
-        self._verify_format(fmts, fname)
-        self._verify(elem, name, 'aliases', list, optional=True)
-        self._verify(elem, name, 'default', optional=True)
-        self._verify(elem, name, 'flags', list, optional=True)
+    def _verify_flags(self, elem, name):
+        for i, flag in enumerate(elem):
+            self._names[name + '[%d]' % i] = elem
+            if not (flag in self.FLAGS):
+                raise CfgFormatFileException("Unknown flag in {}: {}".format(name, flag))
+
 
     @verifier
-    def _verify_fields(self, elem, name):
-        self._verify_list(elem, name, self._verify_field_elem)
+    def _verify_fmt_field_item(self, elem, name):
+        self._verify_fmt(elem, name, 'key', str)
+        fmts, fname = self._get_fmt(elem, name, 'format')
+        self._verify_fmt_format(fmts, fname)
+        self._verify_fmt(elem, name, 'aliases', list, optional=True)
+        self._verify_fmt(elem, name, 'default', optional=True)
+        if 'flags' in elem:
+            flags, fname = self._get_fmt(elem, name, 'flags')
+            self._verify_flags(flags, fname)
+        self._verify_fmt(elem, name, 'flags', list, optional=True)
+
+    @verifier
+    def _verify_fmt_fields(self, elem, name):
+        self._verify_list(elem, name, self._verify_fmt_field_item)
 
 class BadExecException(CfgFormatException):
     pass
@@ -272,6 +294,8 @@ class ConfigEntry(object):
         else:
             self.__root = root
 
+        self.__format_kwarg_objs = []
+
         if isinstance(raw_entry, dict):
             self.__subfields = {}
             for k, v in raw_entry.items():
@@ -285,8 +309,26 @@ class ConfigEntry(object):
         else:
             self.__leaf = True
 
+    def add_format_obj(self, obj):
+        if isinstance(obj, dict):
+            obj = ConfigEntry(obj)
+        if not isinstance(obj, ConfigEntry):
+            raise CfgFormatException("Cannot format ConfgEntry with non-map/dict {}".format(obj))
+        if not obj.is_map():
+            raise CfgFormatException("Object {} is not a map".format(obj.get_name()))
+        self.__format_kwarg_objs.append(obj)
+
     def pformat(self):
         return pprint.pformat(self.get_raw())
+
+    def get_name(self):
+        return self.__name
+
+    def is_list(self):
+        return isinstance(self.__subfields, list)
+
+    def is_map(self):
+        return isinstance(self.__subfields, dict)
 
     def is_leaf(self):
         return self.__leaf
@@ -340,9 +382,19 @@ class ConfigEntry(object):
 
     def _assert_has_attrs(self, key):
         self._assert_not_leaf(key)
-        if isinstance(self.__subfields, list):
+        if self.is_list():
             raise AttributeError("Config entry %s does not have %s: it is a list" %
                                 (self.__name, key))
+
+    def items(self):
+        if not self.is_map():
+            raise CfgFormatException("Item {} is not a map".format(self.__name))
+        return self.__subfields.items()
+
+    def __deepcopy__(self):
+        cpy = copy.deepcopy(self.__subfields)
+        return ConfigEntry(cpy, self.__path, self.__root)
+
     def __getattr__(self, key):
         if key.startswith('_ConfigEntry'):
             return super(ConfigEntry, self).__getattribute__(key.replace("_ConfigEntry", ""))
@@ -368,7 +420,7 @@ class ConfigEntry(object):
 
     def __contains__(self, key):
         self._assert_not_leaf(key)
-        if isinstance(self.__subfields, dict):
+        if self.is_map():
             return key in self.__subfields
         elif isinstance(key, int):
             return key < len(self.__subfields)
@@ -381,7 +433,10 @@ class ConfigEntry(object):
             yield x
 
     def __len__(self):
-        return len(self.__raw)
+        if self.__leaf:
+            return len(self.__raw)
+        else:
+            return len(self.__subfields)
 
     @staticmethod
     def innermost_exec_str(st):

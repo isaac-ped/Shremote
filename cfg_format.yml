@@ -1,10 +1,24 @@
 type: map
 
+computed_fields:
+    - key: out
+      format:
+          type: str
+    - key: local_out
+      format:
+          type: str
+    - key: remote_out
+      format:
+          type: str
+    - key: label
+      format:
+          type: str
+
 fields:
     - key: log_dir
       format:
           type: str
-      default: '~'
+      default: '~/shremote/'
 
     - key: ssh
       format:
@@ -28,6 +42,7 @@ fields:
           type: list
           format:
                 type: map
+                flags: [formattable]
                 fields:
                     - key: cmd
                       format:
@@ -113,6 +128,9 @@ fields:
                                 - key: err
                                   format:
                                       type: str
+                                - key: log
+                                  format:
+                                      type: str
                     - key: enforced_duration
                       aliases: [enforce_duration]
                       format:
@@ -125,6 +143,7 @@ fields:
           type: list
           format:
                 type: map
+                flags: [formattable]
                 fields:
                       - key: program
                         format:
@@ -143,3 +162,10 @@ fields:
                       - key: duration
                         format:
                             type: float
+                computed_fields:
+                    - key: i
+                      format:
+                          type: int
+                    - key: log_dir
+                      format:
+                          type: str
