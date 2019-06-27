@@ -59,7 +59,7 @@ class ConfigFormatter(object):
                       )
         return reference_fmt
 
-    def _expand_cfg_map(self, cfg, field_path, fmt, parent_fmt, exists):
+    def _expand_cfg_map(self, cfg, field_path, fmt, exists):
         if 'fields' in fmt:
             for field in fmt['fields']:
                 self._expand_cfg_field(cfg, field_path, field, fmt, exists)
@@ -69,19 +69,19 @@ class ConfigFormatter(object):
                 for cfg_field in cfg.getpath(field_path):
                     self._expand_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt, exists)
 
-    def _expand_cfg_primitive(self, cfg, field_path, fmt, parent_fmt, exists):
+    def _expand_cfg_primitive(self, cfg, field_path, fmt, exists):
         if cfg.haspath(field_path):
             types = fmt['type'] if isinstance(fmt['type'], list) else [fmt['type']]
             for type_ in types:
                 cfg.getpath(field_path).allow_type(self.TYPES[type_])
 
-    def _expand_cfg_list(self, cfg, field_path, fmt, parent_fmt, exists):
+    def _expand_cfg_list(self, cfg, field_path, fmt, exists):
         if cfg.haspath(field_path):
             sub_fmt = fmt['format']
             for i in range(len(cfg.getpath(field_path))):
                 self._expand_cfg_format(cfg, field_path + [i], sub_fmt, fmt, exists)
 
-    def _expand_cfg_reference(self, cfg, field_path, fmt, parent_fmt, exists):
+    def _expand_cfg_reference(self, cfg, field_path, fmt, exists):
         referent_path = fmt['referent']
         if cfg.haspath(field_path) and cfg.getpath(field_path).is_leaf():
             cfg_entry = cfg.getpath(field_path)
@@ -145,13 +145,13 @@ class ConfigFormatter(object):
 
     def _expand_cfg_format(self, cfg, field_path, fmt, parent_fmt, exists):
         if isinstance(fmt['type'], list) or fmt['type'] in self.TYPES:
-            self._expand_cfg_primitive(cfg, field_path, fmt, parent_fmt, exists)
+            self._expand_cfg_primitive(cfg, field_path, fmt, exists)
         elif fmt['type'] == 'map':
-            self._expand_cfg_map(cfg, field_path, fmt, parent_fmt, exists)
+            self._expand_cfg_map(cfg, field_path, fmt, exists)
         elif fmt['type'] == 'list':
-            self._expand_cfg_list(cfg, field_path, fmt, parent_fmt, exists)
+            self._expand_cfg_list(cfg, field_path, fmt, exists)
         elif fmt['type'] == 'reference':
-            self._expand_cfg_reference(cfg, field_path, fmt, parent_fmt, exists)
+            self._expand_cfg_reference(cfg, field_path, fmt, exists)
         elif fmt['type'] == 'inherit':
             self._expand_cfg_inherit(cfg, field_path, fmt, parent_fmt, exists)
         elif fmt['type'] == 'override':
