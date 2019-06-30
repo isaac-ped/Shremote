@@ -11,7 +11,7 @@ class BadExecException(CfgFormatException):
 class FmtConfig(object):
     """ Formattable config """
 
-    def __init__(self, raw_entry, path = [], root = None):
+    def __init__(self, raw_entry, path = [], root = None, formattable=False):
         if root is not None and len(path) == 0:
             raise CfgFormatException("Root is not none but path exists and is {}".format(path))
         self.__name = ".".join(str(p) for p in path)
@@ -27,7 +27,7 @@ class FmtConfig(object):
         else:
             self.__root = root
 
-        self.__formattable = False
+        self.__formattable = formattable
         self.__format_kwarg_obj = None
 
         self.__computed_subfields = {}
@@ -35,12 +35,12 @@ class FmtConfig(object):
         if isinstance(raw_entry, dict):
             self.__subfields = {}
             for k, v in raw_entry.items():
-                self.__subfields[k] = FmtConfig(v, path + [k], self.__root)
+                self.__subfields[k] = FmtConfig(v, path + [k], self.__root, self.__formattable)
             self.__leaf = False
         elif isinstance(raw_entry, list):
             self.__subfields = []
             for i, v in enumerate(raw_entry):
-                self.__subfields.append(FmtConfig(v, path + [i], self.__root))
+                self.__subfields.append(FmtConfig(v, path + [i], self.__root, self.__formattable))
             self.__leaf = False
         else:
             self.__leaf = True
@@ -239,7 +239,8 @@ class FmtConfig(object):
             return len(self.__subfields)
 
     def __str__(self):
-        return str(self.format())
+        return str(self.format(_strip_escaped_eval=False))
+
 
     @staticmethod
     def innermost_exec_str(st):
@@ -274,9 +275,9 @@ class FmtConfig(object):
             eval_grp = cls.innermost_exec_str(value)
         return value
 
-    def format(self, **kwargs):
+    def format(self, _strip_escaped_eval = True, **kwargs):
         if not self.__formattable:
-            return self.__raw
+            return self.get_raw()
         if self.__format_kwarg_obj is not None:
             kwargobj = copy.deepcopy(self.__format_kwarg_obj)
             for k, v in kwargs.items():
@@ -289,13 +290,17 @@ class FmtConfig(object):
             formatted = self.__raw
             while '{' in formatted:
                 try:
-                    formatted = formatted.format(self.__root, **kwargobj)
+                    if isinstance(formatted, str):
+                        formatted = formatted.format(self.__root, **kwargobj)
+                    else:
+                        formatted = formatted.format(_strip_escaped_eval = False, **kwargobj)
                 except Exception as e:
+                    # Check if error would have arisen if computed fields presentt
                     if self.__format_kwarg_obj is not None:
                         error_due_to_computed_fields = False
                         self.__format_kwarg_obj.enable_computed_fields()
                         try:
-                            self.format(**kwargs)
+                            self.format(_strip_escaped_eval = False, **kwargs)
                             error_due_to_computed_fields = True
                         except Exception as e:
                             pass
@@ -328,10 +333,12 @@ class FmtConfig(object):
                     raise CfgFormatException("Could not cast {} to {} for {}"
                             .format(evaled, self.__types, self.__name))
                 evaled = __type(evaled)
+            if isinstance(evaled, str) and _strip_escaped_eval:
+                evaled = evaled.replace('$$(', '$(')
             return evaled
         return self.__raw
 
-    def formatted(self, key, **kwargs):
+    def formatted(self, key, *args, **kwargs):
         self._assert_has_attrs(key)
         return self.__subfields[key].format(**kwargs)
 
