@@ -1,6 +1,9 @@
 import yaml
 import os
 
+class YmlImportException(Exception):
+    pass
+
 #https://stackoverflow.com/questions/528281/how-can-i-include-an-yaml-file-inside-another
 class IncludeLoader(yaml.SafeLoader):
     ''' A yaml loader that adds the "!include", "!import", and "!inherit |" operators '''
@@ -25,12 +28,12 @@ class IncludeLoader(yaml.SafeLoader):
         filename = os.path.join(self._root, split_import[0])
         with open(filename, 'r') as f:
             rtn = yaml.load(f, IncludeLoader)
-            included_files.append(filename)
+            self.included_files.append(filename)
             for i, sub_node in enumerate(split_import[1:]):
                 if sub_node in rtn:
                     rtn = rtn[sub_node]
                 else:
-                    raise ImportException("Could not find {} in {}".format(':'.join(split_import[1:i+2]), filename))
+                    raise YmlImportException("Could not find {} in {}".format(':'.join(split_import[1:i+2]), filename))
             return rtn
 
     def do_import(self, node):
@@ -57,7 +60,7 @@ class IncludeLoader(yaml.SafeLoader):
         rest = '\n'.join(lines[1:])
 
         imported = self.load_import(import_str)
-        merger = yaml.load(rest, Loader)
+        merger = yaml.load(rest, IncludeLoader)
 
         if merger is not None:
             imported = self.merge_dicts(imported, merger)
