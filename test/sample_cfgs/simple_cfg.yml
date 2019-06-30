@@ -1,32 +1,32 @@
 hosts:
-  dedos01:
-    addr: dedos01.cis.upenn.edu
-  dedos02:
-    addr: dedos02.cis.upenn.edu
+  host1:
+    addr: host1.abc.com
+  host2:
+    addr: host2.def.edu
 
 programs:
   echo:
     start: echo {to_echo}
-    host: dedos02
+    host: host1
 
-time_b: $( 15 + 2 )
+computed_a: $( 15 + 2 )
 
-time: $( 10 + 5 + {0.time_b} )
+computed_b: $( 10 + 5 + {0.computed_a} )
 
 commands:
     - program:
         start: echo "Hello World!"
         host:
-          addr: dedos01.cis.upenn.edu
+          addr: host3.net
       begin: 0
 
     - program:
         start: echo "Hello World!"
-      host: [dedos01, dedos02]
+      host: [host1, host2]
       begin: '1.5'
 
     - program: echo
-      host: dedos01
+      host: host1
       to_echo: '{i}'
       stuff: things
-      begin: '{0.time}'
+      begin: '{0.computed_b}'

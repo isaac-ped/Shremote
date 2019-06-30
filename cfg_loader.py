@@ -1,4 +1,5 @@
 import yaml
+import os
 import re
 import copy
 import pprint
@@ -322,7 +323,12 @@ class CfgLoader(object):
     def _verify_fmt_fields(self, elem, name):
         self._verify_fmt_list(elem, name, self._verify_fmt_field_item)
 
-def load_cfg_file(cfg_filename, loader_filename = 'cfg_format.yml'):
+DEFAULT_CFG_FMT_FILE = os.path.join(os.path.dirname(__file__), 'cfg_format.yml')
+
+
+def load_cfg_file(cfg_filename, loader_filename = None):
+    if loader_filename is None:
+        loader_filename = DEFAULT_CFG_FMT_FILE
     with open(loader_filename, 'r') as f:
         loader = CfgLoader(yaml.load(f, yaml.SafeLoader))
 
@@ -332,7 +338,7 @@ def load_cfg_file(cfg_filename, loader_filename = 'cfg_format.yml'):
     return loader.load_cfg(raw_cfg)
 
 if __name__ == '__main__':
-    cfg = load_cfg_file('test_valid_cfg.yml')
+    cfg = load_cfg_file('test/sample_cfgs/simple_cfg.yml')
 
     print(cfg.pformat())
     for cmd in cfg.commands:
