@@ -19,7 +19,7 @@ def verifier(fn):
         return fn(self, elem, name)
     return inner
 
-class ConfigFormatter(object):
+class CfgLoader(object):
 
     TYPES = {'bool': bool,
                 'int': int,
@@ -35,7 +35,7 @@ class ConfigFormatter(object):
         self._verify_fmt_format(format, '')
         self._check_unused_fmt_fields(format, '')
 
-    def format_cfg(self, raw_cfg):
+    def load_cfg(self, raw_cfg):
         cfg = FmtConfig(raw_cfg)
         self._expand_cfg_format(cfg, [], self.format, None, True)
         cfg.enable_computed_fields()
@@ -323,9 +323,9 @@ class ConfigFormatter(object):
         self._verify_fmt_list(elem, name, self._verify_fmt_field_item)
 
 if __name__ == '__main__':
-    fmtr = ConfigFormatter(yaml.load(open('cfg_format.yml', 'r'), yaml.SafeLoader))
+    loader = CfgLoader(yaml.load(open('cfg_format.yml', 'r'), yaml.SafeLoader))
     raw_cfg = yaml.load(open('test_valid_cfg.yml'), IncludeLoader)
-    cfg = fmtr.format_cfg(raw_cfg)
+    cfg = loader.load_cfg(raw_cfg)
 
     print(cfg.pformat())
     for cmd in cfg.commands:
