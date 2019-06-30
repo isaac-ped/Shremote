@@ -322,10 +322,17 @@ class CfgLoader(object):
     def _verify_fmt_fields(self, elem, name):
         self._verify_fmt_list(elem, name, self._verify_fmt_field_item)
 
+def load_cfg_file(cfg_filename, loader_filename = 'cfg_format.yml'):
+    with open(loader_filename, 'r') as f:
+        loader = CfgLoader(yaml.load(f, yaml.SafeLoader))
+
+    with open(cfg_filename, 'r') as f:
+        raw_cfg = yaml.load(f, IncludeLoader)
+
+    return loader.load_cfg(raw_cfg)
+
 if __name__ == '__main__':
-    loader = CfgLoader(yaml.load(open('cfg_format.yml', 'r'), yaml.SafeLoader))
-    raw_cfg = yaml.load(open('test_valid_cfg.yml'), IncludeLoader)
-    cfg = loader.load_cfg(raw_cfg)
+    cfg = load_cfg_file('test_valid_cfg.yml')
 
     print(cfg.pformat())
     for cmd in cfg.commands:
