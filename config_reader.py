@@ -7,9 +7,6 @@ from include_loader import IncludeLoader
 class CfgFormatFileException(Exception):
     pass
 
-def missing_field_exception(name, key):
-    return CfgFormatFileException("Element {} lacks '{}'".format(name, key))
-
 def wrong_type_exception(name, type, expected):
     return CfgFormatFileException(
             "Element {} is type {}. Expected: {}".format(name, type, expected)
@@ -236,11 +233,11 @@ class ConfigFormatter(object):
     def _get_fmt(self, elem, name, key):
         subname = name + '.' + key
         if key not in elem:
-            raise missing_field_exception(name, key)
+            raise CfgFormatFileException("Element {} lacks '{}'".format(name, key))
         self._names[subname] = elem[key]
         return elem[key], subname
 
-    def _verify_list(self, elem, name, verifier):
+    def _verify_fmt_list(self, elem, name, verifier):
         if not isinstance(elem, list):
             raise wrong_type_exception(name, type(elem), list)
         for i, lelem in enumerate(elem):
@@ -325,7 +322,7 @@ class ConfigFormatter(object):
 
     @verifier
     def _verify_fmt_fields(self, elem, name):
-        self._verify_list(elem, name, self._verify_fmt_field_item)
+        self._verify_fmt_list(elem, name, self._verify_fmt_field_item)
 
 class BadExecException(CfgFormatException):
     pass
