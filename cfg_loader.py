@@ -81,9 +81,10 @@ class CfgLoader(object):
                 for cfg_field in cfg.getpath(field_path):
                     self._expand_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt, exists)
         if 'computed_fields' in fmt:
-            cfg_entry = cfg.getpath(field_path)
-            for field in fmt['computed_fields']:
-                cfg_entry.add_computed_field(field['key'], self.TYPES[field['format']['type']])
+            if cfg.haspath(field_path):
+                cfg_entry = cfg.getpath(field_path)
+                for field in fmt['computed_fields']:
+                    cfg_entry.add_computed_field(field['key'], self.TYPES[field['format']['type']])
         if 'flags' in fmt and 'formattable' in fmt['flags']:
             if cfg.haspath(field_path):
                 cfg.getpath(field_path).set_formattable()

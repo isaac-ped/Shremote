@@ -1,15 +1,6 @@
 type: map
 
 computed_fields:
-    - key: out
-      format:
-          type: str
-    - key: local_out
-      format:
-          type: str
-    - key: remote_out
-      format:
-          type: str
     - key: label
       format:
           type: str
@@ -55,6 +46,7 @@ fields:
                           type: [int, null]
                       default: 0
 
+
     - key: post_cmds
       format: *CMD_FORMAT
 
@@ -80,6 +72,7 @@ fields:
     - key: files
       format:
           type: map
+          flags: [formattable]
           format:
                 type: map
                 fields:
@@ -95,6 +88,10 @@ fields:
                         format:
                             type: reference
                             referent: [hosts]
+          computed_fields:
+              - key: out
+                format:
+                    type: str
 
     - key: programs
       format:
