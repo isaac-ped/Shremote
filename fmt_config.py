@@ -140,28 +140,23 @@ class FmtConfig(object):
         return self.__types
 
     def _get_computed_field(self, key):
-        if not self.__default_computed_subfields_enabled:
-            raise AttributeError("Config entry '%s' requested computed subfield: '%s' "
-                    "which was not provided to formatter" % (self.__name, key))
-
         try:
             field = FmtConfig(self.__computed_subfields[key](), self.__path + [key])
             field.enable_computed_fields()
             return field
         except KeyError:
-            if key not in self.__computed_subfields:
-                raise AttributeError("Config entry '%s' does not contain key: '%s'" %
-                                     (self.__name, key))
+            raise KeyError("Config entry '%s' does not contain key: '%s'" %
+                                 (self.__name, key))
 
     def _assert_not_leaf(self, key):
         if self.__leaf:
-            raise AttributeError("Config entry %s does not have %s: it is a leaf" %
+            raise AttributeError("Config entry '%s' does not have '%s': it is a leaf" %
                                  (self.__name, key))
 
     def _assert_has_attrs(self, key):
         self._assert_not_leaf(key)
         if self.is_list():
-            raise AttributeError("Config entry %s does not have %s: it is a list" %
+            raise AttributeError("Config entry '%s' does not have '%s': it is a list" %
                                 (self.__name, key))
 
     def keys(self):
@@ -210,17 +205,27 @@ class FmtConfig(object):
         try:
             return self.__subfields[key]
         except KeyError:
-            try:
-                return self._get_computed_field(key)
-            except KeyError:
-                pass
-            raise
+            if self.__default_computed_subfields_enabled:
+                try:
+                    return self._get_computed_field(key)
+                except KeyError:
+                    pass
+            else:
+                try:
+                    self._get_computed_field(key)
+                    raise CfgFormatException(
+                            "Config entry '{}' requested unprovided computed subfield: '{}'"
+                            .format(self.__name, key))
+                except KeyError:
+                    pass
+            raise KeyError("Config entry '{}' does not contain key '{}'".format(
+                            self.__name, key))
 
     def __setattr__(self, key, value):
         if key.startswith('_FmtConfig'):
             return super(FmtConfig, self).__setattr__(key, value)
         self._assert_has_attrs(key)
-        self.__subfields[key] = value
+        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root)
 
     def __setitem__(self, key, value):
         self._assert_not_leaf(key)
@@ -228,9 +233,16 @@ class FmtConfig(object):
 
     def __getitem__(self, key):
         self._assert_not_leaf(key)
-        if self.is_map() and key not in self.__subfields:
-            return self._get_computed_field(key)
-        return self.__subfields[key]
+        try:
+            return self.__subfields[key]
+        except KeyError:
+            if self.__default_computed_subfields_enabled:
+                try:
+                    return self._get_computed_field(key)
+                except KeyError:
+                    pass
+            raise
+
 
     def __contains__(self, key):
         self._assert_not_leaf(key)
