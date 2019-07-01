@@ -275,7 +275,7 @@ class FmtConfig(object):
             eval_grp = cls.innermost_exec_str(value)
         return value
 
-    def format(self, _strip_escaped_eval = True, **kwargs):
+    def format(self, _strip_escaped_eval = True, _check_computed = True, **kwargs):
         if not self.__formattable:
             return self.get_raw()
         if self.__format_kwarg_obj is not None:
@@ -296,11 +296,12 @@ class FmtConfig(object):
                         formatted = formatted.format(_strip_escaped_eval = False, **kwargobj)
                 except Exception as e:
                     # Check if error would have arisen if computed fields presentt
-                    if self.__format_kwarg_obj is not None:
+                    if self.__format_kwarg_obj is not None and _check_computed:
                         error_due_to_computed_fields = False
                         self.__format_kwarg_obj.enable_computed_fields()
                         try:
-                            self.format(_strip_escaped_eval = False, **kwargs)
+                            self.format(_strip_escaped_eval = False, _check_computed = False,
+                                        **kwargs)
                             error_due_to_computed_fields = True
                         except Exception as e:
                             pass
