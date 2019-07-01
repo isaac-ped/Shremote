@@ -244,9 +244,6 @@ class CfgLoader(object):
 
     @verifier
     def _verify_fmt_map_type(self, elem, name):
-        if (('fields' in elem) == ('format' in elem)):
-            raise CfgFormatFileException("Must specify exactly one of 'fields' or 'format' in {}"
-                                         .format(name))
         if 'fields' in elem:
             fields, fname = self._get_fmt(elem, name, 'fields')
             self._verify_fmt_fields(fields, fname)
