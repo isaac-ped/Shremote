@@ -136,6 +136,9 @@ fields:
                       format:
                           type: [int, bool, null]
                       default: true
+                    - key: defaults
+                      format:
+                          type: map
                     - *RTN_CHECK
 
     - key: commands
