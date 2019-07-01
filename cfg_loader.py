@@ -339,9 +339,10 @@ def load_cfg_file(cfg_filename, loader_filename = None):
 
 if __name__ == '__main__':
     cfg = load_cfg_file('test/sample_cfgs/simple_cfg.yml')
+    cfg.args = {'stuff': 1}
 
     print(cfg.pformat())
     for cmd in cfg.commands:
-        start = cmd.program.start.format(i=0)
+        start = cmd.program.start.format(i=1)
         begin = cmd.begin[0].format()
         print("Comnand '{}'\n\tstarts at time {}".format(start, begin))

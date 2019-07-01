@@ -198,10 +198,7 @@ class FmtConfig(object):
             cpy.enable_computed_fields()
         return cpy
 
-    def __getattr__(self, key):
-        if key.startswith('_FmtConfig'):
-            return super(FmtConfig, self).__getattribute__(key.replace("_FmtConfig", ""))
-        self._assert_has_attrs(key)
+    def _get_key(self, key):
         try:
             return self.__subfields[key]
         except KeyError:
@@ -221,6 +218,12 @@ class FmtConfig(object):
             raise KeyError("Config entry '{}' does not contain key '{}'".format(
                             self.__name, key))
 
+    def __getattr__(self, key):
+        if key.startswith('_FmtConfig'):
+            return super(FmtConfig, self).__getattribute__(key.replace("_FmtConfig", ""))
+        self._assert_has_attrs(key)
+        return self._get_key(key)
+
     def __setattr__(self, key, value):
         if key.startswith('_FmtConfig'):
             return super(FmtConfig, self).__setattr__(key, value)
@@ -229,20 +232,11 @@ class FmtConfig(object):
 
     def __setitem__(self, key, value):
         self._assert_not_leaf(key)
-        self.__subfields[key] = value
+        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root)
 
     def __getitem__(self, key):
         self._assert_not_leaf(key)
-        try:
-            return self.__subfields[key]
-        except KeyError:
-            if self.__default_computed_subfields_enabled:
-                try:
-                    return self._get_computed_field(key)
-                except KeyError:
-                    pass
-            raise
-
+        return self._get_key(key)
 
     def __contains__(self, key):
         self._assert_not_leaf(key)
@@ -320,7 +314,7 @@ class FmtConfig(object):
                         formatted = formatted.format(self.__root, **kwargobj)
                     else:
                         formatted = formatted.format(_strip_escaped_eval = False, **kwargobj)
-                except Exception as e:
+                except KeyError as e:
                     # Check if error would have arisen if computed fields presentt
                     if self.__format_kwarg_obj is not None and _check_computed:
                         error_due_to_computed_fields = False
@@ -328,18 +322,17 @@ class FmtConfig(object):
                         try:
                             self.format(_strip_escaped_eval = False, _check_computed = False,
                                         **kwargs)
-                            error_due_to_computed_fields = True
-                        except Exception as e:
-                            pass
-                        self.__format_kwarg_obj.disable_computed_fields()
 
-                        if error_due_to_computed_fields:
                             computed_keys = self.__format_kwarg_obj.get_computed_field_keys()
                             raise CfgFormatException(
                                 "Error formatting field {} '{}' due to unprovided field "
-                                "(one of {})"
+                                "(likely one of {})"
                                 .format(self.__name, formatted, computed_keys)
                             )
+
+                        except Exception as e:
+                            self.__format_kwarg_obj.disable_computed_fields()
+
                     raise
                 try:
                     formatted = self.do_eval(formatted)
