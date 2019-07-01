@@ -8,6 +8,7 @@ shr.LOG_DEBUG=False
 from test_include_loader import *
 from test_fmt_config import *
 from test_cfg_loader import *
+from test_checked_process import *
 
 class TestProgram(unittest.TestCase):
 
