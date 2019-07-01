@@ -1,5 +1,6 @@
 import time
 import subprocess
+import shlex
 from logger import *
 from threading import Thread
 
@@ -57,7 +58,6 @@ class CheckProc(object):
                     log_error("Command:\n\t%s\nReturned: %d\nExpected: %d " %
                               (self.args,  rtn_code , valid_rtn),
                               "If this is not an error, add `checked_rtn: None` to command")
-                    print("Raising exception")
                     raise CheckedProcessException(self.args)
 
         return rtn_code
@@ -86,12 +86,15 @@ def ssh_args(ssh_cfg, cmd):
             cmd]
 
 
-def shell_call(args, shell=False,
+def shell_call(args, shell=False, auto_shlex=False,
                  stop_cmd = None, stop_event=None,
                  min_duration=None, max_duration=None, 
                  duration_exceeded_error=False, checked_rtn=None,
                  raise_error=True, check_interval=CHECK_CALL_INTERVAL,
                  log_end = False):
+    if auto_shlex:
+        if isinstance(args, str):
+            args = shlex.split(args)
     proc = CheckProc(args, shell=shell)
     start = time.time()
     while True:
@@ -111,14 +114,13 @@ def shell_call(args, shell=False,
 
         if max_duration is not None and duration > max_duration:
             if stop_cmd is not None:
-                shell_call(stop_cmd, check_interval = .05)
+                shell_call(stop_cmd, auto_shlex=True, check_interval = .05)
             else:
                 proc.terminate()
             time.sleep(.05)
             try:
                 rtn_code = proc.poll(checked_rtn)
             except CheckedProcessException:
-                print("EXceptioned")
                 if stop_event is not None:
                     stop_event.set()
                 if raise_error:

@@ -9,7 +9,7 @@ class TestCfgLoader(unittest.TestCase):
 
     DURATION_CMD = 'for i in `seq 1 {}`; do echo $i; sleep .1; done'
     FOREVER_CMD = ['sleep', '100']
-    KILL_FOREVER_CMD = ['pkill', 'sleep']
+    KILL_FOREVER_CMD = 'pkill sleep'
 
     def dur_cmd(self, time):
         return self.DURATION_CMD.format(time)
@@ -86,6 +86,9 @@ class TestCfgLoader(unittest.TestCase):
             self.assertTrue(event.is_set(), "Error event not set")
             return
         self.assertTrue(False, "Did not raise error")
+
+    def test_auto_shlex(self):
+        shell_call("sleep .1", auto_shlex=True, log_end=True)
 
 if __name__ == '__main__':
     unittest.main()
