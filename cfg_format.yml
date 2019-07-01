@@ -4,6 +4,9 @@ computed_fields:
     - key: label
       format:
           type: str
+    - key: args
+      format:
+          type: defaultdict
 
 fields:
     - key: log_dir

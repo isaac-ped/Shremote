@@ -27,6 +27,6 @@ commands:
 
     - program: echo
       host: host1
-      to_echo: '{i}'
+      to_echo: '{i} {0.args.stuff}'
       stuff: things
       begin: '{0.computed_b}'

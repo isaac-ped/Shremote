@@ -1,6 +1,7 @@
 import copy
 import re
 import pprint
+from collections import defaultdict
 
 class CfgFormatException(Exception):
     pass
@@ -33,9 +34,12 @@ class FmtConfig(object):
         self.__computed_subfields = {}
         self.__default_computed_subfields_enabled = False
         if isinstance(raw_entry, dict):
-            self.__subfields = {}
-            for k, v in raw_entry.items():
-                self.__subfields[k] = FmtConfig(v, path + [k], self.__root, self.__formattable)
+            if isinstance(raw_entry, defaultdict):
+                self.__subfields = raw_entry
+            else:
+                self.__subfields = {}
+                for k, v in raw_entry.items():
+                    self.__subfields[k] = FmtConfig(v, path + [k], self.__root, self.__formattable)
             self.__leaf = False
         elif isinstance(raw_entry, list):
             self.__subfields = []
@@ -136,13 +140,18 @@ class FmtConfig(object):
         return self.__types
 
     def _get_computed_field(self, key):
-        if key not in self.__computed_subfields:
-            raise AttributeError("Config entry '%s' does not contain key: '%s'" %
-                                 (self.__name, key))
         if not self.__default_computed_subfields_enabled:
             raise AttributeError("Config entry '%s' requested computed subfield: '%s' "
                     "which was not provided to formatter" % (self.__name, key))
-        return self.__computed_subfields[key]()
+
+        try:
+            field = FmtConfig(self.__computed_subfields[key](), self.__path + [key])
+            field.enable_computed_fields()
+            return field
+        except KeyError:
+            if key not in self.__computed_subfields:
+                raise AttributeError("Config entry '%s' does not contain key: '%s'" %
+                                     (self.__name, key))
 
     def _assert_not_leaf(self, key):
         if self.__leaf:
@@ -198,9 +207,14 @@ class FmtConfig(object):
         if key.startswith('_FmtConfig'):
             return super(FmtConfig, self).__getattribute__(key.replace("_FmtConfig", ""))
         self._assert_has_attrs(key)
-        if key not in self.__subfields:
-            return self._get_computed_field(key)
-        return self.__subfields[key]
+        try:
+            return self.__subfields[key]
+        except KeyError:
+            try:
+                return self._get_computed_field(key)
+            except KeyError:
+                pass
+            raise
 
     def __setattr__(self, key, value):
         if key.startswith('_FmtConfig'):

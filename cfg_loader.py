@@ -3,6 +3,7 @@ import os
 import re
 import copy
 import pprint
+from collections import defaultdict
 from include_loader import IncludeLoader
 from fmt_config import CfgFormatException, FmtConfig
 
@@ -26,6 +27,7 @@ class CfgLoader(object):
                 'int': int,
                 'float': float,
                 'str': str,
+                'defaultdict': lambda: defaultdict(str),
                 None: lambda: None}
 
     FLAGS = ('required', 'list_ok', 'formattable')
