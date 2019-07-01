@@ -89,7 +89,7 @@ fields:
                             type: reference
                             referent: [hosts]
           computed_fields:
-              - key: out
+              - key: out_dir
                 format:
                     type: str
 
@@ -111,6 +111,7 @@ fields:
                     - key: stop
                       format:
                           type: str
+                      default: null
                     - key: log
                       format:
                           type: map
@@ -125,14 +126,14 @@ fields:
                                 - key: err
                                   format:
                                       type: str
-                                - key: log
-                                  format:
-                                      type: str
-                    - key: enforced_duration
-                      aliases: [enforce_duration]
+                    - key: shorter_duration_error
                       format:
-                          type: [int, bool, null]
+                          type: bool
                       default: true
+                    - key: duration_exceeded_error
+                      format:
+                          type: bool
+                      default: false
                     - key: defaults
                       format:
                           type: map
@@ -159,9 +160,15 @@ fields:
                         format:
                             type: float
                         flags: [required, list_ok]
-                      - key: duration
+                      - key: min_duration
                         format:
-                            type: float
+                            type: [int, bool, null]
+                        default: null
+                      - key: max_duration
+                        aliases: [duration]
+                        format:
+                            type: [int, null]
+                        default: null
                 computed_fields:
                     - key: i
                       format:
