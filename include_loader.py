@@ -8,9 +8,10 @@ class YmlImportException(Exception):
 class IncludeLoader(yaml.SafeLoader):
     ''' A yaml loader that adds the "!include", "!import", and "!inherit |" operators '''
 
+    included_files = []
+
     def __init__(self, stream):
         super(IncludeLoader, self).__init__(stream)
-        self.included_files = []
         try :
             self._root = os.path.split(stream.name)[0]
         except AttributeError:
