@@ -218,6 +218,12 @@ class FmtConfig(object):
             raise KeyError("Config entry '{}' does not contain key '{}'".format(
                             self.__name, key))
 
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return FmtConfig(default)
+
     def __getattr__(self, key):
         if key.startswith('_FmtConfig'):
             return super(FmtConfig, self).__getattribute__(key.replace("_FmtConfig", ""))
