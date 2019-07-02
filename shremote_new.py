@@ -4,10 +4,10 @@ from __future__ import print_function
 from checked_process import shell_call, start_shell_call, start_ssh_call
 import pprint
 
-class LocalCmd(object):
+class ShLocalCmd(object):
 
     def __init__(self, cfg, event=None):
-        self.cmd = self.cfg.cmd.format()
+        self.cmd = self.cfg.cmd.format().replace('\n', ' ')
         self.checked_rtn = self.cfg.checked_rtn.format()
         self.event = event
 
@@ -24,6 +24,7 @@ class ShHost(object):
             'rsync -av -e "ssh -p {ssh.port} -i {ssk.key}" "{dst}" "{ssh.user}@{addr}:{src}"'
 
     def __init__(self, cfg):
+        self.name = cfg.get_name()
         self.addr = cfg.addr.format()
         self.ssh = cfg.ssh
         self.log_dir = cfg.log_dir.format()
@@ -37,6 +38,9 @@ class ShHost(object):
         return exec_fn(cmd, auto_shlex=True, checked_rtn = 0)
 
     def copy_to(self, src, dst, background=False):
+        mkdir_cmd = 'mkdir -p %s' % os.path.dirname(dst)
+        ssh_call(mkdir_cmd, self.ssh, checked_rtn = 0)
+
         cmd = self.RSYNC_TO_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
         if background:
             exec_fn = start_shell_call
@@ -53,7 +57,8 @@ class ShHost(object):
 
 class ShFile(object):
 
-    def __init__(self, cfg, local_out, label):
+    def __init__(self, cfg, name, local_out, label):
+        self.name = name
         self.host = ShHost(cfg.host)
         self.src = cfg.src.format(out_dir = os.path.join(local_out, label))
         self.dst = cfg.dst.format(out_dir = os.path.join(cfg.host.log_dir, label))
@@ -82,11 +87,17 @@ class ShLog(object):
         suffix = ''
         if self.out is not None:
             suffix += ' > {}'.format(os.path.join(self.subdir.format(i=i),
-                                                  self.out.format(i=i))
+                                                  self.out.format(i=i)))
         if self.err is not None:
             suffix += ' 2> {}'.format(os.path.join(self.subdir.format(i=i),
-                                                   self.err.format(i=i))
+                                                   self.err.format(i=i)))
         return suffix
+
+    def remote_directories(self, hosts):
+        dirs = set()
+        for i, host in enumerate(hosts):
+            dirs.add((host, os.path.join(host.log_dir, self.subdir.format(i=i))))
+        return dirs
 
     def copy_local(self, hosts, local_dir, background=False):
         threads = []
@@ -130,6 +141,7 @@ class ShProgram(object):
 class ShCommand(object):
 
     def __init__(self, cfg, event):
+        self.name = cfg.get_name()
         self.cfg = cfg
         self.event = event
         self.begin = cfg.begin.format()
@@ -142,6 +154,12 @@ class ShCommand(object):
             log_warn("Min duration specified but shorter_duration_error is false for: {}"
                      .format(self.pformat()))
             self.min_duration = None
+
+    def get_logs(self, local_dir):
+        threads = []
+        for host in self.hosts:
+            threads.append(self.program.log.copy_local(host, local_dir, background=True))
+        return threads
 
     def raw(self):
         self_dict = self.cfg.raw()
@@ -163,7 +181,7 @@ class ShCommand(object):
             host_log_entry['stop_'] = self.stop_cmd
             host_log_entry['time_'] = float(time.time())
 
-            t = host.exec_cmd(start_cmd, self.event, background=True,
+            t = host.exec_cmd(start_cmd, self.event, background=True, daemon=True,
                               stop_cmd = stop_cmd,
                               min_duration = self.min_duration,
                               max_duration = self.max_duration,
@@ -175,3 +193,131 @@ class ShCommand(object):
             log_entry.append(host_log_entry)
 
         return threads
+
+class ShRemote(object):
+
+    def __init__(self, cfg_file, label, out_dir, args_dict):
+        self.output_dir = os.path.join(out_dir, label, '')
+
+        self.cfg = load_cfg_file(cfg_file)
+        self.cfg.args = args_dict
+        self.cfg.label = label
+
+        self.event = threading.Event()
+        self.label = label
+
+        shell_call('mkdir -p "%s"' % self.output_dir, auto_shlex=True, checked_rtn = 0)
+
+        set_logfile(os.path.join(self.output_dir, 'shremote.log'))
+
+        commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
+        self.commands = sorted(commands, key = lambda cmd: cmd.begin)
+
+        self.init_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('init_cmds', [])]
+        self.post_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('post_cmds', [])]
+
+        self.event_log = []
+
+        self.files = []
+        for name, cfg in self.cfg.get('files', {}).items():
+            self.files.append(ShFile(cfg, name, self.output_dir, label))
+
+    def run_init_cmds(self):
+        for cmd in self.init_cmds:
+            cmd.execute()
+
+    def run_post_cmds(self):
+        for cmd in self.post_cmds:
+            cmd.execute()
+
+    def copy_files(self):
+        for file in self.files:
+            file.copy_to_host()
+
+    def delete_remote_logs(self):
+        remote_dirs = set(cmd.program.log.remote_directories() for cmd in self.commands)
+
+        log_info("About to delete the following directories:")
+        for host, remote_dir in remote_dirs:
+            log_info("%s: %s" % (host.addr, remote_dir))
+
+        threads = []
+        for host, remote_dir in remote_dirs:
+            del_cmd = 'rm -rf %s' % remote_dir
+            threads.append(host.exec_cmd(del_cmd, background=True))
+
+        for thread in threads:
+            thread.join()
+
+    def mk_remote_dirs(self):
+        remote_dirs = set(cmd.program.log.remote_directories() for cmd in self.commands)
+
+        for host, remote_dir in remote_dirs:
+            mkdir_cmd = 'mkdir -p %s' % remote_dir
+            threads.append(host.exec_cmd(mkdir_cmd, background=True))
+
+        for thread in threads:
+            thread.join()
+
+    def get_logs(self):
+        threads = []
+        for cmd in self.commands:
+            threads.append(cmd.get_logs(self.output_dir))
+
+        for thread in threads:
+            thread.join()
+
+        shell_call(['cp', self.cfg_file, self.output_dir], raise_error=True)
+        shell_call(['cp', self.cfg_file, os.path.join(self.output_dir, 'shremote_cfg.yml')], raise_error=True)
+        for filename in set(IncludeLoader.included_files):
+            shell_call(['cp', filename, self.output_dir], raise_error=True)
+
+        with open(os.path.join(self.output_dir, 'event_log.json'), 'w') as f:
+            json.dump(self.event_log, f, indent=2)
+
+    def run_commands(self):
+        min_begin = self.commands[0].begin
+        start_time = time.time() - min_begin
+
+        elapsed = 0
+        last_begin = 0
+        max_end = 0
+
+        for cmd in self.commands:
+            elapsed = time.time() - start_time
+            delay = command.begin - elapsed
+
+            if delay > 0:
+                log("Sleeping for %d" % delay)
+                if self.event.wait(delay):
+                    log_error("Error encountered in other thread")
+                    return
+            elif last_begin != cmomand.begin and delay > .1:
+                log_warn("Falling behind on execution by %.1f s" % delay)
+
+            last_begin = command.begin
+            cmd.start(self.event_log)
+
+            max_end = max(max_end, cmd.begin + \
+                                    max(cmd.max_duration if cmd.max_duration is not None else 0,
+                                        cmd.min_duration if cmd.min_duration is not None else 0))
+
+        elapsed = time.time() - start_time
+        delay = max_end - elapsed
+        if error_event.wait(delay):
+            log_error("Error encountered in other thread")
+
+    def stop(self):
+        self.event.set()
+
+    def run(self):
+        self.mk_remote_dirs()
+        self.run_init_cmds()
+        self.copy_files()
+        self.run_command()
+        self.get_logs()
+        self.run_post_cmds()
+
+        log_info("Done with test!")
+
+
