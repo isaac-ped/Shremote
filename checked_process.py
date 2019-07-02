@@ -166,11 +166,19 @@ def ssh_call(cmd, ssh_cfg, stop_cmd = None, **kwargs):
     return shell_call(cmd, stop_cmd=stop_cmd, **kwargs)
 
 def start_shell_call(*args, **kwargs):
+    daemon = kwargs.get('daemon', False)
+    if 'daemon' in kwargs:
+        del kwargs[daemon]
     t = Thread(target = shell_call, args=args, kwargs=kwargs)
+    t.daemon = daemon
     t.start()
     return t
 
 def start_ssh_call(*args, **kwargs):
+    daemon = kwargs.get('daemon', False)
+    if 'daemon' in kwargs:
+        del kwargs[daemon]
     t = Thread(target = ssh_call, args=args, kwargs=kwargs)
+    t.daemon = daemon
     t.start()
     return t
