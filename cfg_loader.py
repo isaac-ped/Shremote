@@ -190,7 +190,7 @@ class CfgLoader(object):
         key = field['key']
         keypath = field_path + [key]
 
-        if not cfg.haspath(keypath) and field['default'] is not None:
+        if not cfg.haspath(keypath) and 'default' in field:
             cfg.setpath(keypath, field['default'])
 
         if cfg.haspath(keypath) and list_ok:
@@ -224,7 +224,7 @@ class CfgLoader(object):
             if type_ is not None:
                 elem[key] = type_()
             else:
-                elem[key] = None
+                return
         sub, sname = self._get_fmt(elem, name, key)
         if type_ is not None and not isinstance(elem[key], type_):
             raise wrong_type_exception(sname, type(elem[key]), type_)
