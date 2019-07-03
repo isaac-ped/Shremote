@@ -21,8 +21,8 @@ def set_test_mode():
     global TEST_MODE
     TEST_MODE = True
 
-def close_logfile(filename):
-    close(LOGFILE)
+def close_logfile():
+    LOGFILE.close()
 
 def log_to_file(s, **print_kwargs):
     if (LOGFILE is not None):
@@ -46,6 +46,6 @@ def log_error(*args, **kwargs):
         return log_info(*args, **kwargs)
     s = COLORS['error'] + "\n________________________________________________\n"
     s += "error: " + " ".join([str(x) for x in args])
-    s += "\n________________________________________________" + COLORS['end'] + "\n"
+    s += "\n________________________________________________" + COLORS['end']
     log_to_file(s, **kwargs)
 
