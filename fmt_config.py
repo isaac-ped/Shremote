@@ -49,6 +49,9 @@ class FmtConfig(object):
         else:
             self.__leaf = True
 
+    def get_root(self):
+        return self.__root
+
     def set_formattable(self):
         if not self.is_map():
             raise CfgFormatException("Only map-based containers can be set to formattable")
