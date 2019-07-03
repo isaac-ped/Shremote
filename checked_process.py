@@ -1,8 +1,10 @@
 import time
 import subprocess
 import shlex
+import traceback
 from logger import *
 from threading import Thread
+from fmt_config import CfgFormatException
 
 try:
     from queue import Queue, Empty
@@ -24,7 +26,7 @@ class CheckProc(object):
         while True:
             try:
                 line = queue.get_nowait()
-                log("{}-{}:{}".format(self.name, label, line), end='')
+                log("{} - {}:{}".format(self.name, label, line), end='')
             except Empty:
                 break
 
@@ -66,7 +68,10 @@ class CheckProc(object):
         self.proc.terminate()
 
     def force_stop(self):
-        self.proc.terminate()
+        try:
+            self.proc.terminate()
+        except OSError:
+            pass
         time.sleep(.05)
         if self.poll() is None:
             log_warn("Forced to kill prcess")
@@ -76,32 +81,49 @@ class CheckProc(object):
                 log_error("Could not terminate process!")
                 return
 
-CHECK_CALL_INTERVAL= 1
+CHECK_CALL_INTERVAL= .2
 
-def ssh_args(ssh_cfg, cmd):
-    return ['ssh', 
-            '-p', str(ssh_cfg.port), 
+def ssh_args(ssh_cfg, cmd, addr):
+    return ['ssh',
+            '-p', str(ssh_cfg.port),
             '-i', str(ssh_cfg.key),
-            '%s@%s' % (ssh_cfg.user, ssh_cfg.addr),
+            '%s@%s' % (ssh_cfg.user, addr),
             cmd]
 
 
 def shell_call(args, shell=False, auto_shlex=False,
                  stop_cmd = None, stop_event=None,
-                 min_duration=None, max_duration=None, 
+                 min_duration=None, max_duration=None,
                  duration_exceeded_error=False, checked_rtn=None,
                  raise_error=True, check_interval=CHECK_CALL_INTERVAL,
-                 log_end = False):
+                 log_end = False, name = None):
     if auto_shlex:
         if isinstance(args, str):
             args = shlex.split(args)
-    proc = CheckProc(args, shell=shell)
+
+    if name is None:
+        if isinstance(args, list):
+            name = args[0]
+        else:
+            name = args.split()[0]
+
+    try:
+        proc = CheckProc(args, name, shell=shell)
+    except OSError as e:
+        log_error("Process resulted in OSError %s: %s" % (e, args))
+        log_error(traceback.format_exc())
+        if stop_event is not None:
+            stop_event.set()
+        if raise_error:
+            raise
+        return
+
     start = time.time()
     while True:
         duration = time.time() - start
         try:
             rtn_code = proc.poll(checked_rtn)
-        except CheckedProcessException:
+        except CheckedProcessException as e:
             if stop_event is not None:
                 stop_event.set()
             if raise_error:
@@ -115,9 +137,10 @@ def shell_call(args, shell=False, auto_shlex=False,
         if max_duration is not None and duration > max_duration:
             if stop_cmd is not None:
                 shell_call(stop_cmd, auto_shlex=True, check_interval = .05)
+                time.sleep(.25)
             else:
                 proc.terminate()
-            time.sleep(.05)
+                time.sleep(.05)
             try:
                 rtn_code = proc.poll(checked_rtn)
             except CheckedProcessException:
@@ -125,14 +148,20 @@ def shell_call(args, shell=False, auto_shlex=False,
                     stop_event.set()
                 if raise_error:
                     raise
+                return
             if rtn_code is None:
+                if stop_cmd is not None:
+                    log_warn("Attempt to stop command\n\t{} with\n\t{}\ndid not succeed!"
+                             .format(args, stop_cmd))
                 proc.force_stop()
             if duration_exceeded_error:
+                log_error("Duration of {} seconds exceeded for process {}"
+                          .format(max_duration, args))
                 if stop_event is not None:
                     stop_event.set()
                 if raise_error:
-                    raise CheckedProcessException("Duration exceeded for process {}"
-                                                  .format(args))
+                    raise CheckedProcessException("Duration {} exceeded for process {}"
+                                                  .format(max_duration, args))
                 return
 
         if max_duration is not None:
@@ -143,7 +172,7 @@ def shell_call(args, shell=False, auto_shlex=False,
 
         if stop_event is not None:
             if stop_event.wait(sleep_duration):
-                log_error("Error encountered in other thread!")
+                log_warn("Error encountered in other thread while executing %s" % args)
                 proc.force_stop()
         else:
             time.sleep(sleep_duration)
@@ -155,30 +184,45 @@ def shell_call(args, shell=False, auto_shlex=False,
     elif log_end:
         log("Command ", args, " executed for ", duration, " seconds")
 
-def ssh_call(cmd, ssh_cfg, stop_cmd = None, **kwargs):
-    log("Host %s executing: %s" % (ssh_cfg.addr, cmd))
-    args = ssh_args(ssg_cfg, cmd)
+def ssh_call(cmd, ssh_cfg, addr, stop_cmd = None, stop_event = None, name = None, **kwargs):
+    log("Host %s executing: %s" % (addr, cmd))
+    try:
+        args = ssh_args(ssh_cfg, cmd, addr)
+    except Exception as e:
+        if stop_event is not None:
+            stop_event.set()
+        log_error("Error getting ssh arguments for command %s: %s" % (cmd, e))
+        return
+
+    if name is None:
+        name = "%s : %s" % (addr, cmd.split()[0])
+
     if stop_cmd is not None:
-        stop_args = ssh_args(ssh_cfg, stop_cmd)
+        stop_args = ssh_args(ssh_cfg, stop_cmd, addr)
     else:
         stop_args = None
 
-    return shell_call(cmd, stop_cmd=stop_cmd, **kwargs)
+    return shell_call(args, stop_cmd=stop_args, stop_event = stop_event, name = name, **kwargs)
 
 def start_shell_call(*args, **kwargs):
     daemon = kwargs.get('daemon', False)
     if 'daemon' in kwargs:
-        del kwargs[daemon]
+        del kwargs['daemon']
+    if kwargs.get('raise_error', False):
+        log_warn("Raising errors on backgrounded calls is not recommended")
+    else:
+        kwargs['raise_error'] = False
     t = Thread(target = shell_call, args=args, kwargs=kwargs)
     t.daemon = daemon
     t.start()
     return t
 
-def start_ssh_call(*args, **kwargs):
-    daemon = kwargs.get('daemon', False)
-    if 'daemon' in kwargs:
-        del kwargs[daemon]
-    t = Thread(target = ssh_call, args=args, kwargs=kwargs)
+def start_ssh_call(cmd, ssh_cfg, addr, stop_cmd=None, daemon=False, **kwargs):
+    if kwargs.get('raise_error', False):
+        log_warn("Raising errors on backgrounded calls is not recommended")
+    else:
+        kwargs['raise_error'] = False
+    t = Thread(target = ssh_call, args=(cmd, ssh_cfg, addr, stop_cmd), kwargs=kwargs)
     t.daemon = daemon
     t.start()
     return t
