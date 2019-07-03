@@ -1,6 +1,9 @@
 type: map
 
 computed_fields:
+    - key: user
+      format:
+          type: str
     - key: label
       format:
           type: str
@@ -12,7 +15,7 @@ fields:
     - key: log_dir
       format:
           type: str
-      default: '~/shremote/'
+      default: '~/shremote_logs/'
 
     - key: ssh
       format:
@@ -21,7 +24,7 @@ fields:
                 - key: user
                   format:
                     type: str
-                  default: "$USER"
+                  default: "{0.user}"
                 - key: key
                   format:
                     type: str
@@ -91,6 +94,7 @@ fields:
                         format:
                             type: reference
                             referent: [hosts]
+                        flags: [list_ok]
           computed_fields:
               - key: out_dir
                 format:
@@ -129,7 +133,7 @@ fields:
                                 - key: err
                                   format:
                                       type: str
-                    - key: shorter_duration_error
+                    - key: duration_reduced_error
                       format:
                           type: bool
                       default: true
@@ -140,6 +144,10 @@ fields:
                     - key: defaults
                       format:
                           type: map
+                    - key: bg
+                      format:
+                          type: bool
+                      default: false
                     - *RTN_CHECK
 
     - key: commands
@@ -162,13 +170,12 @@ fields:
                       - key: begin
                         format:
                             type: float
-                        flags: [required, list_ok]
+                        flags: [required]
                       - key: min_duration
                         format:
-                            type: [int, bool, null]
+                            type: [int, null]
                         default: null
                       - key: max_duration
-                        aliases: [duration]
                         format:
                             type: [int, null]
                         default: null
