@@ -12,6 +12,10 @@ import pprint
 import os
 import json
 import signal
+import itertools
+
+class ShException(Exception):
+    pass
 
 class ShLocalCmd(object):
 
@@ -98,6 +102,18 @@ class ShLog(object):
         else:
             self.err = None
 
+    def assert_no_overlap(self, other):
+        if not self.subdir.format(i=0) == other.subdir.format(i=1):
+            return
+
+        if self.out is not None:
+            if self.out.format(i=0) == other.out.format(i=1):
+                raise ShException("Overlapping output log file: {}".format(self.out.format(i=0)))
+
+        if self.err is not None:
+            if self.err.format(i=0) == other.err.format(i=1):
+                raise ShException("Overlapping error log file: {}".format(self.err.format(i=0)))
+
     def log_dir(self, host, i):
         return os.path.join(host.log_dir, self.subdir.format(i=i))
 
@@ -123,16 +139,15 @@ class ShLog(object):
         threads = []
 
         for i, host in enumerate(hosts):
-            local_out = os.path.join(local_dir, self.subdir.format(i=i))
-            remote_out = os.path.join(host.log_dir, self.subdir.format(i=i), '*')
+            remote_out = os.path.join(host.log_dir, self.subdir.format(i=i))
 
             if (host.addr, remote_out) in self.DIRS_COPIED:
                 continue
 
-            shell_call(["mkdir", "-p", os.path.join(local_out)],
+            shell_call(["mkdir", "-p", local_dir],
                        checked_rtn = 0, raise_error=True, stop_event = event)
 
-            threads.append(host.copy_from(remote_out, local_out, background=True))
+            threads.append(host.copy_from(remote_out, local_dir, background=True))
 
             self.DIRS_COPIED.add((host.addr, remote_out))
 
@@ -196,6 +211,15 @@ class ShCommand(object):
     def pformat(self):
         return pprint.pformat(self.raw())
 
+    def check_overlapping_logs(self, other):
+        try:
+            self.program.log.assert_no_overlap(other.program.log)
+        except ShException:
+            log_error("Instances of two commands log to the same file, and will clobber each other:")
+            log_error(self.pformat())
+            log_error(other.pformat())
+            raise
+
     def validate(self):
         for host in self.hosts:
             try:
@@ -223,7 +247,6 @@ class ShCommand(object):
         if self.program.background and self.min_duration is not None:
             log_error("Cannot specify min_duration for a backgrounded program: {}"
                       .format(start_cmd))
-
 
     def start(self, log_entry):
         threads = []
@@ -313,6 +336,9 @@ class ShRemote(object):
     def validate(self):
         for cmd in self.commands:
             cmd.validate()
+
+        for cmd1, cmd2 in itertools.combinations(self.commands, 2):
+            cmd1.check_overlapping_logs(cmd2)
 
     def run_init_cmds(self):
         for cmd in self.init_cmds:
