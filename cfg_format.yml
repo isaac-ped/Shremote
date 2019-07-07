@@ -166,6 +166,7 @@ fields:
 
     - key: commands
       format:
+          flags: [required]
           type: list
           format:
                 type: map
@@ -180,7 +181,7 @@ fields:
                       - key: host
                         format:
                             type: map
-                            flags: [inherit, required, list_ok]
+                            flags: [inherit, required]
                             parent: [.., program, host]
                       - key: begin
                         format:
