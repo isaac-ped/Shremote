@@ -146,6 +146,8 @@ class FmtConfig(object):
         elif self.__leaf:
             return False
         else:
+            if not isinstance(path[0], int) and self.is_list():
+                return False
             if path[0] not in self:
                 return False
             return self[path[0]].haspath(path[1:])
