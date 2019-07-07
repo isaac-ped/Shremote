@@ -195,7 +195,7 @@ fields:
                             type: [int, null]
                         default: null
                 computed_fields:
-                    - key: i
+                    - key: host_idx
                       format:
                           type: int
                     - key: log_dir

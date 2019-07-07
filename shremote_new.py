@@ -103,43 +103,43 @@ class ShLog(object):
             self.err = None
 
     def assert_no_overlap(self, other):
-        if not self.subdir.format(i=0) == other.subdir.format(i=1):
+        if not self.subdir.format(host_idx=0) == other.subdir.format(host_idx=0):
             return
 
         if self.out is not None:
-            if self.out.format(i=0) == other.out.format(i=1):
-                raise ShException("Overlapping output log file: {}".format(self.out.format(i=0)))
+            if self.out.format(host_idx=0) == other.out.format(host_idx=0):
+                raise ShException("Overlapping output log file: {}".format(self.out.format(host_idx=0)))
 
         if self.err is not None:
-            if self.err.format(i=0) == other.err.format(i=1):
-                raise ShException("Overlapping error log file: {}".format(self.err.format(i=0)))
+            if self.err.format(host_idx=0) == other.err.format(host_idx=0):
+                raise ShException("Overlapping error log file: {}".format(self.err.format(host_idx=0)))
 
-    def log_dir(self, host, i):
-        return os.path.join(host.log_dir, self.subdir.format(i=i))
+    def log_dir(self, host, host_idx):
+        return os.path.join(host.log_dir, self.subdir.format(host_idx=host_idx))
 
-    def suffix(self, host, i):
+    def suffix(self, host, host_idx):
         suffix = ''
         if self.out is not None:
             suffix += ' > {}'.format(os.path.join(host.log_dir,
-                                                  self.subdir.format(i=i),
-                                                  self.out.format(i=i)))
+                                                  self.subdir.format(host_idx = host_idx),
+                                                  self.out.format(host_idx = host_idx)))
         if self.err is not None:
             suffix += ' 2> {}'.format(os.path.join(host.log_dir,
-                                                   self.subdir.format(i=i),
-                                                   self.err.format(i=i)))
+                                                   self.subdir.format(host_idx = host_idx),
+                                                   self.err.format(host_idx = host_idx)))
         return suffix
 
     def remote_directories(self, hosts):
         dirs = set()
         for i, host in enumerate(hosts):
-            dirs.add((host, os.path.join(host.log_dir, self.subdir.format(i=i))))
+            dirs.add((host, os.path.join(host.log_dir, self.subdir.format(host_idx = i))))
         return dirs
 
     def copy_local(self, hosts, local_dir, event = None, background=False):
         threads = []
 
         for i, host in enumerate(hosts):
-            remote_out = os.path.join(host.log_dir, self.subdir.format(i=i))
+            remote_out = os.path.join(host.log_dir, self.subdir.format(host_idx = i))
 
             if (host.addr, remote_out) in self.DIRS_COPIED:
                 continue
@@ -169,14 +169,14 @@ class ShProgram(object):
         self.checked_rtn = cfg.checked_rtn.format()
         self.background = cfg.bg.format()
 
-    def start_cmd(self, host, i):
-        log_dir = self.log.log_dir(host, i)
-        return self.start.format(i=i, log_dir = log_dir) +\
-                self.log.suffix(host, i)
+    def start_cmd(self, host, host_idx):
+        log_dir = self.log.log_dir(host, host_idx)
+        return self.start.format(host_idx = host_idx, log_dir = log_dir) +\
+                self.log.suffix(host, host_idx)
 
-    def stop_cmd(self, i):
+    def stop_cmd(self, host_idx):
         if self.stop is not None:
-            return self.stop.format(i=i)
+            return self.stop.format(host_idx = host_idx)
         else:
             return None
 
