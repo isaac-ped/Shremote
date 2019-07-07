@@ -117,6 +117,23 @@ class FmtConfig(object):
                 self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root)
             self[path[0]].setpath(path[1:], value)
 
+    def mergepath(self, path, value):
+        if len(path) == 0:
+            raise Exception("No path passsed")
+        if len(path) == 1:
+            value = FmtConfig(value, self.__path + [path[0]], self.__root)
+            if path[0] in self and self[path[0]].is_map():
+                for k, v in value.items():
+                    if k not in self[path[0]]:
+                        self[path[0]][k] = v
+            else:
+                self[path[0]] = value
+        else:
+            if path[0] not in self:
+                self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root)
+            self[path[0]].mergepath(path[1:], value)
+
+
     def getpath(self, path):
         if len(path) == 0:
             return self
@@ -168,6 +185,12 @@ class FmtConfig(object):
         if self.__default_computed_subfields_enabled:
             for x in self.__computed_subfields.keys():
                 yield x
+
+    def values(self):
+        if not self.is_map():
+            raise CfgFormatException("Item {} is not a map".format(self.__name))
+        for x in self.__subfields.values():
+            yield x
 
     def items(self):
         if not self.is_map():
@@ -241,7 +264,10 @@ class FmtConfig(object):
 
     def __setitem__(self, key, value):
         self._assert_not_leaf(key)
-        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root)
+        try:
+            self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root)
+        except (TypeError, KeyError) as e:
+            raise CfgFormatException("Error setting {} in {}: {}".format(key, self.__path, e))
 
     def __getitem__(self, key):
         self._assert_not_leaf(key)
@@ -254,7 +280,8 @@ class FmtConfig(object):
         elif isinstance(key, int):
             return key < len(self.__subfields)
         else:
-            raise AttributeError("Key {} has wrong type for querying {}".format(key, self.__name))
+            raise AttributeError("Key '{}' has wrong type ({}) for querying '{}' ({})"
+                                 .format(key, type(key), self.__path, type(self.__raw)))
 
     def __iter__(self):
         self._assert_not_leaf('__iter__')
