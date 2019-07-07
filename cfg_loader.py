@@ -30,7 +30,7 @@ class CfgLoader(object):
                 'defaultdict': lambda: defaultdict(str),
                 None: lambda: None}
 
-    FLAGS = ('required', 'list_ok', 'formattable')
+    FLAGS = ('required', 'list_ok', 'formattable', 'inherit')
 
     def __init__(self, format):
         self.format = format
@@ -40,7 +40,7 @@ class CfgLoader(object):
 
     def load_cfg(self, raw_cfg):
         cfg = FmtConfig(raw_cfg)
-        self._expand_cfg_format(cfg, [], self.format, None, True)
+        self._expand_cfg_format(cfg, [], self.format, [], False, True)
         cfg.enable_computed_fields()
         for child in cfg.children(recursive=True):
             try:
@@ -73,15 +73,15 @@ class CfgLoader(object):
                       )
         return reference_fmt
 
-    def _expand_cfg_map(self, cfg, field_path, fmt, exists):
+    def _expand_cfg_map(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
         if 'fields' in fmt:
             for field in fmt['fields']:
-                self._expand_cfg_field(cfg, field_path, field, fmt, exists)
+                self._expand_cfg_field(cfg, field_path, field, fmt_path + [fmt], reference_depth, exists)
         if 'format' in fmt:
             if cfg.haspath(field_path):
                 sub_fmt = fmt['format']
                 for cfg_field in cfg.getpath(field_path):
-                    self._expand_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt, exists)
+                    self._expand_cfg_format(cfg, field_path + [cfg_field], sub_fmt, fmt_path + [fmt], reference_depth, exists)
         if 'computed_fields' in fmt:
             if cfg.haspath(field_path):
                 cfg_entry = cfg.getpath(field_path)
@@ -99,11 +99,11 @@ class CfgLoader(object):
                 cfg_entry = cfg.getpath(field_path)
                 cfg_entry.allow_type(self.TYPES[type_])
 
-    def _expand_cfg_list(self, cfg, field_path, fmt, exists):
+    def _expand_cfg_list(self, cfg, field_path, fmt, fmt_path, exists):
         if cfg.haspath(field_path):
             sub_fmt = fmt['format']
             for i in range(len(cfg.getpath(field_path))):
-                self._expand_cfg_format(cfg, field_path + [i], sub_fmt, fmt, exists)
+                self._expand_cfg_format(cfg, field_path + [i], sub_fmt, fmt_path + [fmt], 0, exists)
 
     def _expand_cfg_reference(self, cfg, field_path, fmt, exists):
         referent_path = fmt['referent']
@@ -124,71 +124,87 @@ class CfgLoader(object):
                         .format(referent_path))
             reference_fmt = reference_fmt['format']
             exists = exists and cfg.haspath(field_path)
-            self._expand_cfg_format(cfg, field_path, reference_fmt, None, exists)
+            self._expand_cfg_format(cfg, field_path, reference_fmt, [], len(field_path), exists)
 
-    def _expand_cfg_inherit(self, cfg, field_path, fmt, parent_fmt, exists):
-        if cfg.haspath(field_path):
+    def _expand_cfg_inherit(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
+
+        parent_path = field_path[reference_depth:]
+        for next in fmt['parent']:
+            if next == '..':
+                parent_path = parent_path[:-1]
+            else:
+                parent_path.append(next)
+
+        if cfg.haspath(parent_path):
+            cfg.mergepath(field_path, cfg.getpath(parent_path))
+
+        if reference_depth == 0 and cfg.haspath(field_path):
             inherited_field = None
-            inherited_fmt = parent_fmt
+            inherited_fmt_path = fmt_path[:]
             for inherited_field_name in fmt['parent']:
+                if (inherited_field_name == '..'):
+                    inherited_fmt_path = inherited_fmt_path[:-1]
+                    continue
+                inherited_fmt = inherited_fmt_path[-1]
                 for field in inherited_fmt['fields']:
                     if field['key'] == inherited_field_name:
                         inherited_field = field
                         inherited_fmt = field['format']
                         if inherited_fmt['type'] == 'reference':
                             inherited_field = self._get_reference_fmt(inherited_fmt['referent'])
-                            inherited_fmt = inherited_field['format']
+                            inherited_fmt_path.append(inherited_field['format'])
+                        else:
+                            inherited_fmt_path.append(inherited_fmt)
                         break
                 else:
                     raise CfgFormatFileException(
                             "Parent format {} does not exist in {}"
                             .format(inherited_field_name, inherited_field))
-            self._expand_cfg_field(cfg, field_path[:-1], inherited_field, None, True)
-        else:
-            parent_path = field_path[:-1] + fmt['parent']
-            if not cfg.haspath(parent_path):
-                raise CfgFormatException(
-                        "Config lacks paths {} and {}"
-                        .format(field_path, parent_path))
-            cfg.setpath(field_path, cfg.getpath(parent_path))
+            self._expand_cfg_format(cfg, field_path, inherited_fmt_path[-1], fmt_path, False, True)
 
-    def _expand_cfg_override(self, cfg, field_path, fmt, parent_fmt, exists):
+    def _expand_cfg_override(self, cfg, field_path, fmt, fmt_path, exists):
         override = fmt['overrides']
         if not cfg.haspath(field_path):
             if not cfg.haspath(override):
                 raise CfgFormatException(
                         "Config lacks paths {} and {}"
                         .format(field_path, override))
-            cfg.setpath(field_path, cfg.getpath(override))
+            cfg.mergepath(field_path, cfg.getpath(override))
         else:
             reference_fmt = self._get_reference_fmt(override)
             if reference_fmt['type'] != 'map' or 'fields' not in reference_fmt:
                 raise CfgFormatFileException("Reference format {} is not specified map type"
                                              .format(override))
-            self._expand_cfg_format(cfg, field_path, reference_fmt, parent_fmt, True)
+            self._expand_cfg_format(cfg, field_path, reference_fmt, fmt_path, False, True)
 
-
-    def _expand_cfg_format(self, cfg, field_path, fmt, parent_fmt, exists):
-        if isinstance(fmt['type'], list) or fmt['type'] in self.TYPES:
+    def _expand_cfg_format(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
+        is_primitive = isinstance(fmt['type'], list) or fmt['type'] in self.TYPES
+        if is_primitive:
             self._expand_cfg_primitive(cfg, field_path, fmt, exists)
-        elif fmt['type'] == 'map':
-            self._expand_cfg_map(cfg, field_path, fmt, exists)
+
+        if fmt['type'] == 'map':
+            self._expand_cfg_map(cfg, field_path, fmt, fmt_path, reference_depth, exists)
+            if 'inherit' in fmt['flags']:
+                self._expand_cfg_inherit(cfg, field_path, fmt, fmt_path + [fmt], reference_depth, exists)
         elif fmt['type'] == 'list':
-            self._expand_cfg_list(cfg, field_path, fmt, exists)
+            self._expand_cfg_list(cfg, field_path, fmt, fmt_path, exists)
         elif fmt['type'] == 'reference':
             self._expand_cfg_reference(cfg, field_path, fmt, exists)
-        elif fmt['type'] == 'inherit':
-            self._expand_cfg_inherit(cfg, field_path, fmt, parent_fmt, exists)
         elif fmt['type'] == 'override':
-            self._expand_cfg_override(cfg, field_path, fmt, parent_fmt, exists)
-        else:
+            self._expand_cfg_override(cfg, field_path, fmt, fmt_path, exists)
+        elif fmt['type'] == 'key':
+            pass
+        elif not is_primitive:
             raise Exception("HOW DID YOU DO THIS")
 
-    def _expand_cfg_field(self, cfg, field_path, field, parent_fmt, exists):
-        field_required = 'required' in field['flags']
-        list_ok = 'list_ok' in field['flags']
+    def _expand_cfg_field(self, cfg, field_path, field, fmt_path, reference_depth, exists):
+        field_required = 'required' in field['format']['flags']
+        list_ok = 'list_ok' in field['format']['flags']
         key = field['key']
         keypath = field_path + [key]
+
+        if not cfg.haspath(keypath) and field['format']['type'] == 'key' and reference_depth == 0:
+            cfg.setpath(keypath, field_path[-1])
 
         if not cfg.haspath(keypath) and 'default' in field:
             cfg.setpath(keypath, field['default'])
@@ -198,10 +214,10 @@ class CfgLoader(object):
             if not isinstance(raw_cfg, list):
                 cfg.setpath(keypath, [raw_cfg])
             if not field['format']['type'] == 'list':
-                list_fmt = {'type': 'list', 'format': field['format']}
+                list_fmt = {'type': 'list', 'format': field['format'], 'flags': []}
                 field['format'] = list_fmt
 
-        self._expand_cfg_format(cfg, keypath, field['format'], parent_fmt, exists)
+        self._expand_cfg_format(cfg, keypath, field['format'], fmt_path, reference_depth, exists)
 
         if exists and field_required and not cfg.haspath(keypath):
             raise CfgFormatException("Required field {} does not exist in config".format(keypath))
@@ -256,9 +272,6 @@ class CfgLoader(object):
         if 'computed_fields' in elem:
             fields, fname = self._get_fmt(elem, name, 'computed_fields')
             self._verify_fmt_fields(fields, fname)
-        if 'flags' in elem:
-            flags, fname = self._get_fmt(elem, name, 'flags')
-            self._verify_flags(flags, fname)
 
     @verifier
     def _verify_fmt_list_type(self, elem, name):
@@ -270,7 +283,7 @@ class CfgLoader(object):
         self._verify_fmt(elem, name, 'referent', list)
 
     @verifier
-    def _verify_fmt_inherit_type(self, elem, name):
+    def _verify_fmt_inherit_flag(self, elem, name):
         self._verify_fmt(elem, name, 'parent', list)
 
     @verifier
@@ -279,6 +292,13 @@ class CfgLoader(object):
 
     @verifier
     def _verify_fmt_format(self, elem, name):
+        if 'flags' in elem:
+            flags, fname = self._get_fmt(elem, name, 'flags')
+            self._verify_flags(flags, fname)
+            if 'inherit' in flags:
+                self._verify_fmt_inherit_flag(elem, name)
+        self._verify_fmt(elem, name, 'flags', list, optional=True)
+
         etype, tname = self._get_fmt(elem, name, 'type')
         if isinstance(etype, list):
             self._verify_fmt(elem, name, 'type', list)
@@ -286,16 +306,16 @@ class CfgLoader(object):
                 raise CfgFormatFileException("For reference element {}: not all types are basic".format(name))
             return
 
-        if etype == 'map':
-            self._verify_fmt_map_type(elem, name)
-        elif etype == 'list':
+        if etype == 'list':
             self._verify_fmt_list_type(elem, name)
         elif etype == 'reference':
             self._verify_fmt_reference_type(elem, name)
-        elif etype == 'inherit':
-            self._verify_fmt_inherit_type(elem, name)
+        elif etype == 'map':
+            self._verify_fmt_map_type(elem, name)
         elif etype == 'override':
             self._verify_fmt_override_type(elem, name)
+        elif etype == 'key':
+            pass
         elif etype not in self.TYPES:
             raise CfgFormatFileException("Unknown type {} for {}".format(etype, tname))
 
@@ -314,10 +334,6 @@ class CfgLoader(object):
         self._verify_fmt_format(fmts, fname)
         self._verify_fmt(elem, name, 'aliases', list, optional=True)
         self._verify_fmt(elem, name, 'default', optional=True)
-        if 'flags' in elem:
-            flags, fname = self._get_fmt(elem, name, 'flags')
-            self._verify_flags(flags, fname)
-        self._verify_fmt(elem, name, 'flags', list, optional=True)
 
     @verifier
     def _verify_fmt_fields(self, elem, name):
@@ -338,11 +354,12 @@ def load_cfg_file(cfg_filename, loader_filename = None):
     return loader.load_cfg(raw_cfg)
 
 if __name__ == '__main__':
-    cfg = load_cfg_file('test/sample_cfgs/simple_cfg.yml')
+    import sys
+    cfg = load_cfg_file(sys.argv[1])
     cfg.args = {'stuff': 1}
 
     print(cfg.pformat())
     for cmd in cfg.commands:
         start = cmd.program.start.format(i=1)
-        begin = cmd.begin[0].format()
+        begin = cmd.begin.format()
         print("Comnand '{}'\n\tstarts at time {}".format(start, begin))

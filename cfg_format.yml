@@ -44,7 +44,7 @@ fields:
                     - key: cmd
                       format:
                           type: str
-                      flags: [required]
+                          flags: [required]
                     - &RTN_CHECK
                       key: checked_rtn
                       aliases: [check_rtn]
@@ -62,18 +62,24 @@ fields:
           format:
                 type: map
                 fields:
+                    - key: name
+                      format:
+                          type: key
+                      default: null
                     - key: addr
                       format:
                           type: str
-                      flags: [required]
+                          flags: [required]
                     - key: ssh
                       format:
-                          type: override
-                          overrides: [ssh]
+                          type: map
+                          flags: [inherit]
+                          parent: [.., .., .., ssh]
                     - key: log_dir
                       format:
-                          type: override
-                          overrides: [log_dir]
+                          type: map
+                          flags: [inherit]
+                          parent: [.., .., .., log_dir]
 
     - key: files
       format:
@@ -82,19 +88,23 @@ fields:
           format:
                 type: map
                 fields:
+                      - key: name
+                        format:
+                            type: key
+                        default: null
                       - key: src
                         format:
                             type: str
-                        flags: [required]
+                            flags: [required]
                       - key: dst
                         format:
                             type: str
-                        flags: [required]
+                            flags: [required]
                       - key: host
                         format:
                             type: reference
                             referent: [hosts]
-                        flags: [list_ok]
+                            flags: [list_ok]
           computed_fields:
               - key: out_dir
                 format:
@@ -106,15 +116,19 @@ fields:
           format:
                 type: map
                 fields:
+                    - key: name
+                      format:
+                          type: key
+                      default: null
                     - key: host
                       format:
                           type: reference
                           referent: [hosts]
-                      flags: [list_ok]
+                          flags: [list_ok]
                     - key: start
                       format:
                           type: str
-                      flags: [required]
+                          flags: [required]
                     - key: stop
                       format:
                           type: str
@@ -155,22 +169,23 @@ fields:
           type: list
           format:
                 type: map
-                flags: [formattable]
+                flags: [formattable, inherit]
+                parent: [program, defaults]
                 fields:
                       - key: program
                         format:
                             type: reference
                             referent: [programs]
-                        flags: [required]
+                            flags: [required]
                       - key: host
                         format:
-                            type: inherit
-                            parent: [program, host]
-                        flags: [required]
+                            type: map
+                            flags: [inherit, required, list_ok]
+                            parent: [.., program, host]
                       - key: begin
                         format:
                             type: float
-                        flags: [required]
+                            flags: [required]
                       - key: min_duration
                         format:
                             type: [int, null]
