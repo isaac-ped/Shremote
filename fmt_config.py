@@ -344,7 +344,8 @@ class FmtConfig(object):
             return self.get_raw()
         if isinstance(self.__raw, str):
             formatted = self.__raw
-            while '{' in formatted:
+            # Search for { which is not followed or preceeded by {
+            while re.search('(?<!{){[^{]', formatted) is not None:
                 try:
                     if isinstance(formatted, str):
                         formatted = formatted.format(self.__root, **kwargobj)
@@ -391,6 +392,7 @@ class FmtConfig(object):
                 evaled = __type(evaled)
             if isinstance(evaled, str) and _strip_escaped_eval:
                 evaled = evaled.replace('$$(', '$(')
+                evaled = evaled.format()
             return evaled
         return self.__raw
 
