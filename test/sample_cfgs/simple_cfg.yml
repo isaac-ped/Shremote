@@ -20,13 +20,14 @@ commands:
           addr: host3.net
       begin: 0
 
+    - program: echo
+      host: host1
+      to_echo: '{host_idx} {0.args.stuff}'
+      stuff: things
+      begin: '{0.computed_b}'
+
     - program:
         start: echo "Hello World!"
       host: [host1, host2]
       begin: '1.5'
 
-    - program: echo
-      host: host1
-      to_echo: '{i} {0.args.stuff}'
-      stuff: things
-      begin: '{0.computed_b}'
