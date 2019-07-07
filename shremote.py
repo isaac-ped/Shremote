@@ -558,9 +558,6 @@ class Command:
             log_fatal("{}: Program requires a 'start' command".format(program_name))
 
         if 'duration' in cmd_cfg:
-            if self.program.stop is None:
-                log_fatal("{}: Must specify a 'stop' command if duration is specified".format(
-                          program_name))
             duration_raw = cmd_cfg.formatted('duration', **self.dict())
             self.duration = int(try_eval(duration_raw, 'duration'))
 
@@ -581,8 +578,12 @@ class Command:
                         "{}: Specified enforce_duration=True with no duration specified".format(program_name)
                     )
                 self.enforced_duration = self.duration - 1
-            elif isinstance(enforce_duration, int) and enforce_duration > 0:
+            elif isinstance(enforce_duration, (int, float)) and enforce_duration > 0:
                 self.enforced_duration = enforce_duration
+            else:
+                log_fatal(
+                    "{}: Unknown type for enforce_duration (should be boolean, int or float)".format(program_name)
+                )
         elif self.duration is not None:
             self.enforced_duration = self.duration - 1
 
