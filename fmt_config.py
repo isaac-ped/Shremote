@@ -58,13 +58,13 @@ class FmtConfig(object):
         self.__format_kwarg_obj = self
         self.__formattable = True
         for child in self.children():
-            child._set_format_obj(self)
+            child._set_format_root(self)
 
-    def _set_format_obj(self, obj):
+    def _set_format_root(self, obj):
         self.__format_kwarg_obj = obj
         self.__formattable = True
         for child in self.children():
-            child._set_format_obj(obj)
+            child._set_format_root(obj)
 
     def enable_computed_fields(self):
         self.__default_computed_subfields_enabled = True

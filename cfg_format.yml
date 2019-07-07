@@ -39,7 +39,7 @@ fields:
           type: list
           format:
                 type: map
-                flags: [formattable]
+                flags: [format_root]
                 fields:
                     - key: cmd
                       format:
@@ -84,7 +84,7 @@ fields:
     - key: files
       format:
           type: map
-          flags: [formattable]
+          flags: [format_root]
           format:
                 type: map
                 fields:
@@ -169,7 +169,7 @@ fields:
           type: list
           format:
                 type: map
-                flags: [formattable, inherit]
+                flags: [format_root, inherit]
                 parent: [program, defaults]
                 fields:
                       - key: program

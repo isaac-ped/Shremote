@@ -30,7 +30,7 @@ class CfgLoader(object):
                 'defaultdict': lambda: defaultdict(str),
                 None: lambda: None}
 
-    FLAGS = ('required', 'list_ok', 'formattable', 'inherit')
+    FLAGS = ('required', 'list_ok', 'format_root', 'inherit')
 
     def __init__(self, format):
         self.format = format
@@ -87,7 +87,7 @@ class CfgLoader(object):
                 cfg_entry = cfg.getpath(field_path)
                 for field in fmt['computed_fields']:
                     cfg_entry.add_computed_field(field['key'], self.TYPES[field['format']['type']])
-        if 'flags' in fmt and 'formattable' in fmt['flags']:
+        if 'flags' in fmt and 'format_root' in fmt['flags']:
             if cfg.haspath(field_path):
                 cfg.getpath(field_path).set_formattable()
 
