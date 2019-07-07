@@ -128,8 +128,11 @@ class CfgLoader(object):
 
     def _expand_cfg_inherit(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
 
+        parent = fmt['parent']
+
         parent_path = field_path[reference_depth:]
-        for next in fmt['parent']:
+
+        for next in parent:
             if next == '..':
                 parent_path = parent_path[:-1]
             else:
@@ -141,7 +144,7 @@ class CfgLoader(object):
         if reference_depth == 0 and cfg.haspath(field_path):
             inherited_field = None
             inherited_fmt_path = fmt_path[:]
-            for inherited_field_name in fmt['parent']:
+            for inherited_field_name in parent:
                 if (inherited_field_name == '..'):
                     inherited_fmt_path = inherited_fmt_path[:-1]
                     continue
@@ -178,6 +181,19 @@ class CfgLoader(object):
             self._expand_cfg_format(cfg, field_path, reference_fmt, fmt_path, False, True)
 
     def _expand_cfg_format(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
+        if cfg.haspath(field_path) and 'list_ok' in fmt['flags']:
+            raw_cfg = cfg.getpath(field_path).get_raw()
+            if not isinstance(raw_cfg, list):
+                cfg.setpath(field_path, [raw_cfg])
+            if not fmt['type'] == 'list':
+                if 'parent' in fmt:
+                    fmt['parent'] = ['..'] + fmt['parent']
+                fmt['flags'].remove('list_ok')
+                fmt['format'] = copy.deepcopy(fmt)
+                fmt['type'] = 'list'
+                if 'inherit' in fmt['flags']:
+                    fmt['flags'].remove('inherit')
+
         is_primitive = isinstance(fmt['type'], list) or fmt['type'] in self.TYPES
         if is_primitive:
             self._expand_cfg_primitive(cfg, field_path, fmt, exists)
@@ -208,14 +224,6 @@ class CfgLoader(object):
 
         if not cfg.haspath(keypath) and 'default' in field:
             cfg.setpath(keypath, field['default'])
-
-        if cfg.haspath(keypath) and list_ok:
-            raw_cfg = cfg.getpath(keypath).get_raw()
-            if not isinstance(raw_cfg, list):
-                cfg.setpath(keypath, [raw_cfg])
-            if not field['format']['type'] == 'list':
-                list_fmt = {'type': 'list', 'format': field['format'], 'flags': []}
-                field['format'] = list_fmt
 
         self._expand_cfg_format(cfg, keypath, field['format'], fmt_path, reference_depth, exists)
 
@@ -360,6 +368,6 @@ if __name__ == '__main__':
 
     print(cfg.pformat())
     for cmd in cfg.commands:
-        start = cmd.program.start.format(i=1)
+        start = cmd.program.start.format(host_idx=1)
         begin = cmd.begin.format()
         print("Comnand '{}'\n\tstarts at time {}".format(start, begin))
