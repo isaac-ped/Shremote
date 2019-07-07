@@ -58,7 +58,7 @@ class CheckProc(object):
             if valid_rtn is not None:
                 if rtn_code != valid_rtn:
                     log_error("Command:\n\t%s\nReturned: %d\nExpected: %d " %
-                              (self.args,  rtn_code , valid_rtn),
+                              (self.name, rtn_code, valid_rtn),
                               "If this is not an error, add `checked_rtn: None` to command")
                     raise CheckedProcessException(self.args)
 
@@ -173,16 +173,26 @@ def shell_call(args, shell=False, auto_shlex=False,
         if stop_event is not None:
             if stop_event.wait(sleep_duration):
                 log_warn("Error encountered in other thread while executing %s" % args)
-                proc.force_stop()
+                # Give it a chance to stop normally with the stop_cmd
+                if stop_cmd is not None:
+                    log("Attempting to gracefully kill {} with {}".format(name, stop_cmd))
+                    shell_call(stop_cmd, auto_shlex=True, check_interval = .05)
+                    time.sleep(.25)
+                if proc.poll() is None:
+                    log("Attempt to gracefully kill {} was unsuccessful".format(name))
+                    # Then forcefully kill it in case it is still running
+                    proc.force_stop()
+                else:
+                    log("Graceful kill of {} succeded".format(name))
         else:
             time.sleep(sleep_duration)
 
     if min_duration is not None and duration < min_duration:
-        log_error("Command ", args, " executed for ", duration, 
-                  "seconds, expected: ", min_duration)
+        log_error("Command \"", name, "\" executed for ", duration,
+                  "seconds; expected: ", min_duration)
         stop_event.set()
     elif log_end:
-        log("Command ", args, " executed for ", duration, " seconds")
+        log("Command ", name, " executed for ", duration, " seconds")
 
 def ssh_call(cmd, ssh_cfg, addr, stop_cmd = None, stop_event = None, name = None, **kwargs):
     log("Host %s executing: %s" % (addr, cmd))
@@ -195,7 +205,7 @@ def ssh_call(cmd, ssh_cfg, addr, stop_cmd = None, stop_event = None, name = None
         return
 
     if name is None:
-        name = "%s : %s" % (addr, cmd.split()[0])
+        name = "'%s' on '%s'" % (cmd.split()[0], addr)
 
     if stop_cmd is not None:
         stop_args = ssh_args(ssh_cfg, stop_cmd, addr)
