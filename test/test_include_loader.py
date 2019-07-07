@@ -11,34 +11,34 @@ class TestLoader(unittest.TestCase):
 
     def test_full_import(self):
         cfg = '''
-imported: !import test_include.yml
+imported: !import sample_cfgs/includable.yml
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('test_include.yml'), IncludeLoader)
+        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg)
 
     def test_1_partial_import(self):
         cfg = '''
-imported: !import test_include.yml::entry_one
+imported: !import sample_cfgs/includable.yml::entry_one
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('test_include.yml'), IncludeLoader)
+        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg['entry_one'])
 
     def test_2_partial_import(self):
         cfg = '''
-imported: !import test_include.yml::entry_one::sub_key1
+imported: !import sample_cfgs/includable.yml::entry_one::sub_key1
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('test_include.yml'), IncludeLoader)
+        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg['entry_one']['sub_key1'])
 
     def test_dne_import(self):
         cfg = '''
-imported: !import test_include.yml::entry_one::NONEXISTENT_KEY2
+imported: !import sample_cfgs/includable.yml::entry_one::NONEXISTENT_KEY2
 '''
         try:
             raw_cfg = yaml.load(cfg, IncludeLoader)
@@ -49,21 +49,21 @@ imported: !import test_include.yml::entry_one::NONEXISTENT_KEY2
     def test_inherit_no_override(self):
         cfg = '''
 inherited: !inherit |
-    test_include.yml::entry_one
+    sample_cfgs/includable.yml::entry_one
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('test_include.yml'), IncludeLoader)
+        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
 
         self.assertEqual(raw_cfg['inherited'], included_cfg['entry_one'])
 
     def test_inherit_override(self):
         cfg = '''
 inherited: !inherit |
-    test_include.yml::entry_one
+    sample_cfgs/includable.yml::entry_one
     sub_key2: new_value2
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('test_include.yml'), IncludeLoader)
+        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
 
         self.assertEqual(raw_cfg['inherited']['sub_key1'],
                          included_cfg['entry_one']['sub_key1'])
@@ -73,13 +73,13 @@ inherited: !inherit |
     def test_inherited_merge(self):
         cfg = '''
 inherited: !inherit |
-    test_include.yml
+    sample_cfgs/includable.yml
     entry_one:
         sub_key2: new_value2
         sub_key3: new_value3
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('test_include.yml'), IncludeLoader)
+        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
 
         self.assertEqual(raw_cfg['inherited']['entry_one']['sub_key1'],
                          included_cfg['entry_one']['sub_key1'])

@@ -1,0 +1,15 @@
+programs:
+    echo:
+        start: echo {to_echo}
+        host:
+            addr: localhost
+        defaults:
+            to_echo: "Hello world!"
+
+commands:
+    - program: echo
+      begin: 0
+
+    - program: echo
+      to_echo: "Goodbye world!"
+      begin: 5
