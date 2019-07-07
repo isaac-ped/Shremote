@@ -38,7 +38,8 @@ def log_info(*args, **kwargs):
     log_to_file(s + " ".join([str(x) for x in args]) + COLORS['end'], **kwargs)
 
 def log_warn(*args, **kwargs):
-    s = COLORS["warning"] + "warning: " + ' '.join([str(x) for x in args]) + COLORS['end']
+    s = COLORS["warning"] + "warning {:.1f}: ".format(time.time() - start_time) + \
+            ' '.join([str(x) for x in args]) + COLORS['end']
     log_to_file(s, **kwargs)
 
 def log_error(*args, **kwargs):
