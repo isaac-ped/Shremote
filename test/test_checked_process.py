@@ -19,7 +19,7 @@ class TestCfgLoader(unittest.TestCase):
         fn()
         dur = time.time() - start
 
-        self.assertTrue(dur < max_time, "Fn ran for too long")
+        self.assertTrue(dur < max_time, "Fn ran for too long: {} < {}".format(dur, max_time))
 
     def test_simple_shell_execute(self):
         self.check_duration(.4,
@@ -30,7 +30,7 @@ class TestCfgLoader(unittest.TestCase):
     def test_max_duration_stop_cmd(self):
         self.check_duration(.5,
                 lambda: shell_call(self.FOREVER_CMD, stop_cmd = self.KILL_FOREVER_CMD,
-                           max_duration = .25, log_end = True)
+                           max_duration = .15, log_end = True, check_interval=.05)
         )
 
     def test_max_duration_no_stop_cmd(self):
@@ -69,9 +69,9 @@ class TestCfgLoader(unittest.TestCase):
     def test_stop_with_event(self):
         event = threading.Event()
         t = start_shell_call(self.FOREVER_CMD, stop_cmd = self.KILL_FOREVER_CMD,
-                             log_end=True, check_interval=.1, stop_event=event)
+                             log_end=True, check_interval=.05, stop_event=event)
         event.set()
-        self.check_duration(.1, lambda: t.join())
+        self.check_duration(.25, lambda: t.join())
 
     def test_check_rtn_passes(self):
         shell_call(self.dur_cmd(3), shell=True, log_end=True,
