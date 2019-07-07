@@ -137,7 +137,7 @@ def shell_call(args, shell=False, auto_shlex=False,
         if max_duration is not None and duration > max_duration:
             if stop_cmd is not None:
                 shell_call(stop_cmd, auto_shlex=True, check_interval = .05)
-                time.sleep(.25)
+                time.sleep(.1)
             else:
                 proc.terminate()
                 time.sleep(.05)
@@ -177,7 +177,7 @@ def shell_call(args, shell=False, auto_shlex=False,
                 if stop_cmd is not None:
                     log("Attempting to gracefully kill {} with {}".format(name, stop_cmd))
                     shell_call(stop_cmd, auto_shlex=True, check_interval = .05)
-                    time.sleep(.25)
+                    time.sleep(.1)
                 if proc.poll() is None:
                     log("Attempt to gracefully kill {} was unsuccessful".format(name))
                     # Then forcefully kill it in case it is still running
