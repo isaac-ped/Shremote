@@ -33,7 +33,7 @@ class ShHost(object):
             'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{dst}" "{ssh.user}@{addr}:{src}"'
 
     def __init__(self, cfg):
-        self.name = cfg.get_name()
+        self.name = cfg.name.format()
         self.addr = cfg.addr.format()
         self.ssh = cfg.ssh
         label = cfg.get_root().label.format()
@@ -72,8 +72,8 @@ class ShHost(object):
 
 class ShFile(object):
 
-    def __init__(self, cfg, name, local_out, label):
-        self.name = name
+    def __init__(self, cfg, local_out, label):
+        self.name = cfg.name.format()
         self.host = [ShHost(h) for h in cfg.host]
         self.src = cfg.src.format(out_dir = os.path.join(local_out, label))
         self.dst = cfg.dst.format(out_dir = os.path.join(cfg.host.log_dir, label))
@@ -145,6 +145,7 @@ class ShLog(object):
 class ShProgram(object):
 
     def __init__(self, cfg):
+        self.name = cfg.name.format()
         self.log = ShLog(cfg.log)
         self.start = cfg.start
         self.stop = cfg.get('stop', None)
@@ -167,7 +168,6 @@ class ShProgram(object):
 class ShCommand(object):
 
     def __init__(self, cfg, event):
-        self.name = cfg.get_name()
         self.cfg = cfg
         self.event = event
         self.begin = cfg.begin.format()
@@ -248,15 +248,19 @@ class ShCommand(object):
                                   log_end = True)
                 threads.append(t)
             else:
+                start_name = start_cmd.split()[0]
                 t = host.exec_cmd(start_cmd, self.event, background=True, daemon=True,
                                   checked_rtn = self.program.checked_rtn, max_duration = self.max_duration,
-                                  log_end = False)
+                                  log_end = True)
                 threads.append(t)
 
                 sleep_stop_cmd = 'sleep {}; {}'.format(self.max_duration, stop_cmd)
+                stop_sleep_cmd = 'pkill sleep'
                 t = host.exec_cmd(sleep_stop_cmd, self.event, background=True, daemon=True,
+                                  stop_cmd = stop_sleep_cmd,
                                   min_duration = self.max_duration,
-                                  log_end = True)
+                                  max_duration = self.max_duration + 1,
+                                  log_end = True, name = 'stop %s' % start_name)
                 threads.append(t)
 
             host_log_entry.update(self.raw())
@@ -301,8 +305,8 @@ class ShRemote(object):
         self.event_log = []
 
         self.files = []
-        for name, cfg in self.cfg.get('files', {}).items():
-            self.files.append(ShFile(cfg, name, self.output_dir, label))
+        for cfg in self.cfg.get('files', {}).values():
+            self.files.append(ShFile(cfg, self.output_dir, label))
 
         self.validate()
 
@@ -416,6 +420,7 @@ class ShRemote(object):
         delay = max_end - elapsed
         if self.event.wait(delay):
             log_error("Error encountered in other thread during final wait period!")
+            time.sleep(5)
 
     def stop(self):
         self.event.set()
