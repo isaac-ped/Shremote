@@ -19,8 +19,6 @@ import signal
 import traceback
 from threading import Thread
 import threading
-from inspect import currentframe, getframeinfo
-from pathlib import Path
 
 COLORS = dict(
     END='\033[0m',
@@ -385,7 +383,8 @@ class Log:
         else:
             log_warn("Cannot locate logs in cfg.logs.dir, cfg.programs.log_dir or cfg.dirs.log_dir.\
                       Using user home directory.")
-            return str(Path.home())
+            Config.instance().set_permanent(log_dir = '~/')
+            return '~/'
 
     def __init__(self, log_name, log_cfg, label=None):
         log("Initializing log {}".format(log_name))
