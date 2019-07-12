@@ -85,11 +85,21 @@ class CfgLoader(object):
         if 'computed_fields' in fmt:
             if cfg.haspath(field_path):
                 cfg_entry = cfg.getpath(field_path)
+                cfg_entry.enable_computed_fields()
                 for field in fmt['computed_fields']:
-                    cfg_entry.add_computed_field(field['key'], self.TYPES[field['format']['type']])
+                    self._expand_cfg_computed_field(cfg, field_path, field['key'], field['format'], reference_depth, fmt_path + [fmt])
         if 'flags' in fmt and 'format_root' in fmt['flags']:
             if cfg.haspath(field_path):
                 cfg.getpath(field_path).set_formattable()
+
+    def _expand_cfg_computed_field(self, cfg, field_path, key, fmt, reference_depth, fmt_path):
+        cfg_entry = cfg.getpath(field_path)
+        if fmt['type'] in self.TYPES:
+            cfg_entry.add_computed_field(key,  self.TYPES[fmt['type']]())
+        elif fmt['type'] == 'map':
+            cfg.setpath(field_path + [key], {}, True)
+            print(field_path + [key])
+            self._expand_cfg_format(cfg, field_path + [key], fmt, fmt_path, reference_depth, True)
 
 
     def _expand_cfg_primitive(self, cfg, field_path, fmt, exists):
@@ -124,7 +134,7 @@ class CfgLoader(object):
                         .format(referent_path))
             reference_fmt = reference_fmt['format']
             exists = exists and cfg.haspath(field_path)
-            self._expand_cfg_format(cfg, field_path, reference_fmt, [], len(field_path), exists)
+            self._expand_cfg_format(cfg, field_path, reference_fmt, [], len(field_path), False)
 
     def _expand_cfg_inherit(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
 
@@ -139,6 +149,7 @@ class CfgLoader(object):
                 parent_path.append(next)
 
         if cfg.haspath(parent_path):
+            #print(cfg.getpath(field_path).pformat())
             cfg.mergepath(field_path, cfg.getpath(parent_path))
 
         if reference_depth == 0 and cfg.haspath(field_path):
@@ -149,6 +160,11 @@ class CfgLoader(object):
                     inherited_fmt_path = inherited_fmt_path[:-1]
                     continue
                 inherited_fmt = inherited_fmt_path[-1]
+                pprint.pprint((inherited_field_name, inherited_fmt))
+                if isinstance(inherited_field_name, int):
+                    inherited_fmt = field['format']
+                    continue
+
                 for field in inherited_fmt['fields']:
                     if field['key'] == inherited_field_name:
                         inherited_field = field
@@ -194,6 +210,7 @@ class CfgLoader(object):
                 if 'inherit' in fmt['flags']:
                     fmt['flags'].remove('inherit')
 
+
         is_primitive = isinstance(fmt['type'], list) or fmt['type'] in self.TYPES
         if is_primitive:
             self._expand_cfg_primitive(cfg, field_path, fmt, exists)
@@ -227,7 +244,7 @@ class CfgLoader(object):
 
         self._expand_cfg_format(cfg, keypath, field['format'], fmt_path, reference_depth, exists)
 
-        if exists and field_required and not cfg.haspath(keypath):
+        if exists and field_required and not cfg.haspath(keypath, True):
             raise CfgFormatException("Required field {} does not exist in config".format(keypath))
 
 

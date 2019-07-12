@@ -59,7 +59,7 @@ fields:
     - key: hosts
       format:
           type: map
-          format:
+          format: &host_fmt
                 type: map
                 fields:
                     - key: name
@@ -120,7 +120,7 @@ fields:
                       format:
                           type: key
                       default: null
-                    - key: host
+                    - key: hosts
                       format:
                           type: reference
                           referent: [hosts]
@@ -178,11 +178,11 @@ fields:
                             type: reference
                             referent: [programs]
                             flags: [required]
-                      - key: host
+                      - key: hosts
                         format:
                             type: map
                             flags: [inherit, required]
-                            parent: [.., program, host]
+                            parent: [.., program, hosts]
                       - key: begin
                         format:
                             type: float
@@ -202,3 +202,13 @@ fields:
                     - key: log_dir
                       format:
                           type: str
+                    - key: host
+                      format:
+                          type: map
+                          fields:
+                              - key: addr
+                                format:
+                                    type: str
+                              - key: name
+                                format:
+                                    type: str

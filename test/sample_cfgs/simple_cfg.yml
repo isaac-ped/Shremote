@@ -27,7 +27,6 @@ commands:
       begin: '{0.computed_b}'
 
     - program:
-        start: echo "Hello World!"
+        start: echo "Hello World: {host.name}"
       host: [host1, host2]
       begin: '1.5'
-

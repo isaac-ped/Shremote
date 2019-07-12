@@ -12,9 +12,9 @@ class BadExecException(CfgFormatException):
 class FmtConfig(object):
     """ Formattable config """
 
-    def __init__(self, raw_entry, path = [], root = None, formattable=False):
-        if root is not None and len(path) == 0:
-            raise CfgFormatException("Root is not none but path exists and is {}".format(path))
+    def __init__(self, raw_entry, path = [], root = None, formattable=False, computed=False):
+        if root is None and len(path) > 0:
+            raise CfgFormatException("Root is not none and path DNE".format(path))
         self.__name = ".".join(str(p) for p in path)
         self.__path = path
 
@@ -30,8 +30,8 @@ class FmtConfig(object):
 
         self.__formattable = formattable
         self.__format_kwarg_obj = None
+        self.__is_computed = computed
 
-        self.__computed_subfields = {}
         self.__default_computed_subfields_enabled = False
         if isinstance(raw_entry, dict):
             if isinstance(raw_entry, defaultdict):
@@ -66,16 +66,23 @@ class FmtConfig(object):
         for child in self.children():
             child._set_format_root(obj)
 
+    def is_computed(self):
+        return self.__is_computed
+
     def enable_computed_fields(self):
         self.__default_computed_subfields_enabled = True
         for child in self.children():
             child.enable_computed_fields()
 
-    def add_computed_field(self, key, type_):
-        self.__computed_subfields[key] = type_
+    def add_computed_field(self, key, val):
+        self.__subfields[key] = FmtConfig(val, self.__path, self.__root, self.__formattable, True)
 
     def get_computed_field_keys(self):
-        return self.__computed_subfields.keys()
+        keys = set()
+        for key, val in self.items():
+            if val.is_computed():
+                keys.add(val)
+        return keys
 
     def disable_computed_fields(self):
         self.__default_computed_subfields_enabled = False
@@ -107,20 +114,21 @@ class FmtConfig(object):
                 raw = [v.get_raw() for v in self.__subfields]
             return raw
 
-    def setpath(self, path, value):
+    def setpath(self, path, value, is_computed=False):
         if len(path) == 0:
             raise Exception("No path passsed")
         if len(path) == 1:
-            self[path[0]] = FmtConfig(value, self.__path + [path[0]], self.__root)
+            self[path[0]] = FmtConfig(value, self.__path + [path[0]], self.__root, self.__formattable, is_computed or self.__is_computed)
         else:
             if path[0] not in self:
-                self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root)
-            self[path[0]].setpath(path[1:], value)
+                self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root, self.__formattable, is_computed)
+            self[path[0]].setpath(path[1:], value, is_computed or self.__is_computed)
 
     def mergepath(self, path, value):
         if len(path) == 0:
             raise Exception("No path passsed")
         if len(path) == 1:
+            print(value)
             value = FmtConfig(value, self.__path + [path[0]], self.__root)
             if path[0] in self and self[path[0]].is_map():
                 for k, v in value.items():
@@ -134,15 +142,19 @@ class FmtConfig(object):
             self[path[0]].mergepath(path[1:], value)
 
 
-    def getpath(self, path):
+    def getpath(self, path, computed_ok=False):
         if len(path) == 0:
+            if self.__is_computed and not computed_ok and not self.__default_computed_subfields_enabled:
+                raise CfgFormatException("Returning computed field")
             return self
         else:
             return self[path[0]].getpath(path[1:])
 
-    def haspath(self, path):
+    def haspath(self, path, computed_ok=True):
         if len(path) == 0:
-            return True
+            if (not self.__is_computed) or computed_ok or self.__default_computed_subfields_enabled:
+                return True
+            return False
         elif self.__leaf:
             return False
         else:
@@ -150,7 +162,7 @@ class FmtConfig(object):
                 return False
             if path[0] not in self:
                 return False
-            return self[path[0]].haspath(path[1:])
+            return self[path[0]].haspath(path[1:], computed_ok)
 
     def allow_type(self, _type):
         if self.__types is None:
@@ -160,15 +172,6 @@ class FmtConfig(object):
 
     def get_types(self):
         return self.__types
-
-    def _get_computed_field(self, key):
-        try:
-            field = FmtConfig(self.__computed_subfields[key](), self.__path + [key])
-            field.enable_computed_fields()
-            return field
-        except KeyError:
-            raise KeyError("Config entry '%s' does not contain key: '%s'" %
-                                 (self.__name, key))
 
     def _assert_not_leaf(self, key):
         if self.__leaf:
@@ -183,9 +186,7 @@ class FmtConfig(object):
 
     def keys(self):
         for x in self.__subfields.keys():
-            yield x
-        if self.__default_computed_subfields_enabled:
-            for x in self.__computed_subfields.keys():
+            if self.__default_computed_subfields_enabled or not self.__subfields[x].is_computed():
                 yield x
 
     def values(self):
@@ -220,29 +221,19 @@ class FmtConfig(object):
             return self.__raw
         subf_copy = copy.deepcopy(self.__subfields, memo)
         cpy = FmtConfig(subf_copy, self.__path, self.__root)
-        for cfk, cfv in self.__computed_subfields.items():
-            cpy.add_computed_field(cfk, cfv)
         if self.__default_computed_subfields_enabled:
             cpy.enable_computed_fields()
         return cpy
 
-    def _get_key(self, key):
+    def _get_key(self, key, computed_ok = False):
         try:
-            return self.__subfields[key]
+            rtn = self.__subfields[key]
+            if rtn.is_computed() and (not computed_ok) and (not self.__default_computed_subfields_enabled):
+                raise CfgFormatException(
+                        "Config entry '{}' requested unprovided computed subfield: '{}'"
+                        .format(self.__name, key))
+            return rtn
         except KeyError:
-            if self.__default_computed_subfields_enabled:
-                try:
-                    return self._get_computed_field(key)
-                except KeyError:
-                    pass
-            else:
-                try:
-                    self._get_computed_field(key)
-                    raise CfgFormatException(
-                            "Config entry '{}' requested unprovided computed subfield: '{}'"
-                            .format(self.__name, key))
-                except KeyError:
-                    pass
             raise KeyError("Config entry '{}' does not contain key '{}'".format(
                             self.__name, key))
 
@@ -262,12 +253,12 @@ class FmtConfig(object):
         if key.startswith('_FmtConfig'):
             return super(FmtConfig, self).__setattr__(key, value)
         self._assert_has_attrs(key)
-        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root)
+        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root, self.__is_computed)
 
     def __setitem__(self, key, value):
         self._assert_not_leaf(key)
         try:
-            self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root)
+            self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root, self.__is_computed)
         except (TypeError, KeyError) as e:
             raise CfgFormatException("Error setting {} in {}: {}".format(key, self.__path, e))
 
