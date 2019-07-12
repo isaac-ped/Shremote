@@ -202,13 +202,3 @@ fields:
                     - key: log_dir
                       format:
                           type: str
-                    - key: host
-                      format:
-                          type: map
-                          fields:
-                              - key: addr
-                                format:
-                                    type: str
-                              - key: name
-                                format:
-                                    type: str
