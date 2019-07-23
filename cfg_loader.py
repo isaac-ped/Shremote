@@ -41,21 +41,6 @@ class CfgLoader(object):
     def load_cfg(self, raw_cfg):
         cfg = FmtConfig(raw_cfg)
         self._expand_cfg_format(cfg, [], self.format, [], False, True)
-        cfg.enable_computed_fields()
-        for child in cfg.children(recursive=True):
-            try:
-                if child.is_leaf():
-                    child.format()
-            except ValueError as e:
-                raise CfgFormatException(
-                        "Error casting config entry {} to one of {}: {}"
-                        .format(child.get_name(), child.get_types(),  e)
-                )
-            except KeyError as e:
-                raise CfgFormatException(
-                        "Error formatting config entry {}: {}"
-                        .format(child.get_name(), e)
-                )
         cfg.disable_computed_fields()
         return cfg
 
@@ -95,10 +80,9 @@ class CfgLoader(object):
     def _expand_cfg_computed_field(self, cfg, field_path, key, fmt, reference_depth, fmt_path):
         cfg_entry = cfg.getpath(field_path)
         if fmt['type'] in self.TYPES:
-            cfg_entry.add_computed_field(key,  self.TYPES[fmt['type']]())
+            cfg_entry.add_computed_field(key, self.TYPES[fmt['type']]())
         elif fmt['type'] == 'map':
             cfg.setpath(field_path + [key], {}, True)
-            print(field_path + [key])
             self._expand_cfg_format(cfg, field_path + [key], fmt, fmt_path, reference_depth, True)
 
 
@@ -149,7 +133,6 @@ class CfgLoader(object):
                 parent_path.append(next)
 
         if cfg.haspath(parent_path):
-            #print(cfg.getpath(field_path).pformat())
             cfg.mergepath(field_path, cfg.getpath(parent_path))
 
         if reference_depth == 0 and cfg.haspath(field_path):
@@ -160,7 +143,6 @@ class CfgLoader(object):
                     inherited_fmt_path = inherited_fmt_path[:-1]
                     continue
                 inherited_fmt = inherited_fmt_path[-1]
-                pprint.pprint((inherited_field_name, inherited_fmt))
                 if isinstance(inherited_field_name, int):
                     inherited_fmt = field['format']
                     continue
@@ -383,8 +365,7 @@ if __name__ == '__main__':
     cfg = load_cfg_file(sys.argv[1])
     cfg.args = {'stuff': 1}
 
-    print(cfg.pformat())
     for cmd in cfg.commands:
-        start = cmd.program.start.format(host_idx=1)
+        start = cmd.program.start.format(host_idx=0, host=cmd.hosts[0])
         begin = cmd.begin.format()
-        print("Comnand '{}'\n\tstarts at time {}".format(start, begin))
+        print("Command '{}'\n\tstarts at time {}".format(start, begin))

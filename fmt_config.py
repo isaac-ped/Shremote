@@ -12,6 +12,8 @@ class BadExecException(CfgFormatException):
 class FmtConfig(object):
     """ Formattable config """
 
+    __format_kwargs = None
+
     def __init__(self, raw_entry, path = [], root = None, formattable=False, computed=False):
         if root is None and len(path) > 0:
             raise CfgFormatException("Root is not none and path DNE".format(path))
@@ -19,7 +21,16 @@ class FmtConfig(object):
         self.__path = path
 
         if isinstance(raw_entry, FmtConfig):
+            if raw_entry.is_map():
+                computed_mask = {k: v.is_computed() for k, v in raw_entry.items()}
+            elif raw_entry.is_list():
+                computed_mask = {i: v.is_computed() for i, v in enumerate(raw_entry)}
+            else:
+                computed_mask = defaultdict(lambda : raw_entry.is_computed())
+                computed = raw_entry.is_computed()
             raw_entry = raw_entry.get_raw()
+        else:
+            computed_mask = defaultdict(lambda: computed)
 
         self.__raw = raw_entry
         self.__types = None
@@ -28,23 +39,24 @@ class FmtConfig(object):
         else:
             self.__root = root
 
-        self.__formattable = formattable
-        self.__format_kwarg_obj = None
         self.__is_computed = computed
+
+        self.__formattable = formattable
+        self.__formattable_root = None
 
         self.__default_computed_subfields_enabled = False
         if isinstance(raw_entry, dict):
             if isinstance(raw_entry, defaultdict):
-                self.__subfields = raw_entry
+                self.__subfields = defaultdict(lambda : FmtConfig( raw_entry.default_factory(), path + ['?'], self.__root, self.__formattable, True))
             else:
                 self.__subfields = {}
                 for k, v in raw_entry.items():
-                    self.__subfields[k] = FmtConfig(v, path + [k], self.__root, self.__formattable)
+                    self.__subfields[k] = FmtConfig(v, path + [k], self.__root, self.__formattable, computed_mask[k])
             self.__leaf = False
         elif isinstance(raw_entry, list):
             self.__subfields = []
             for i, v in enumerate(raw_entry):
-                self.__subfields.append(FmtConfig(v, path + [i], self.__root, self.__formattable))
+                self.__subfields.append(FmtConfig(v, path + [i], self.__root, self.__formattable, computed_mask[i]))
             self.__leaf = False
         else:
             self.__leaf = True
@@ -55,16 +67,22 @@ class FmtConfig(object):
     def set_formattable(self):
         if not self.is_map():
             raise CfgFormatException("Only map-based containers can be set to formattable")
-        self.__format_kwarg_obj = self
+        self.__formattable_root = self
         self.__formattable = True
-        for child in self.children():
+        for child in self.children(True):
             child._set_format_root(self)
 
     def _set_format_root(self, obj):
-        self.__format_kwarg_obj = obj
+        self.__formattable_root = obj
         self.__formattable = True
-        for child in self.children():
-            child._set_format_root(obj)
+
+    def set_format_kwargs(self, kwargs):
+        if self.__formattable_root is not None:
+            FmtConfig.__format_kwargs = copy.deepcopy(self.__formattable_root)
+        else:
+            FmtConfig.__format_kwargs = FmtConfig({}, self.__path, self.__root, self.__formattable, True)
+        for k, v in kwargs.items():
+            FmtConfig.__format_kwargs[k] = v
 
     def is_computed(self):
         return self.__is_computed
@@ -75,13 +93,18 @@ class FmtConfig(object):
             child.enable_computed_fields()
 
     def add_computed_field(self, key, val):
-        self.__subfields[key] = FmtConfig(val, self.__path, self.__root, self.__formattable, True)
+        self.__subfields[key] = FmtConfig(val, self.__path + [key], self.__root, self.__formattable, True)
 
     def get_computed_field_keys(self):
+        if not self.is_map():
+            return set()
         keys = set()
         for key, val in self.items():
             if val.is_computed():
-                keys.add(val)
+                keys.add(key)
+        for child in self.children():
+            if child.is_map():
+                keys |= child.get_computed_field_keys()
         return keys
 
     def disable_computed_fields(self):
@@ -104,11 +127,18 @@ class FmtConfig(object):
     def is_leaf(self):
         return self.__leaf
 
+    def get_subfields(self):
+        return self.__subfields
+
     def get_raw(self):
         if self.__leaf:
             return self.__raw
         else:
-            if isinstance(self.__subfields, dict):
+            if isinstance(self.__subfields, defaultdict):
+                raw = defaultdict(self.__subfields.default_factory)
+                for k, v in self.__subfields.items():
+                    raw[k] = v
+            elif isinstance(self.__subfields, dict):
                 raw = {k: v.get_raw() for k, v in self.__subfields.items()}
             elif isinstance(self.__subfields, list):
                 raw = [v.get_raw() for v in self.__subfields]
@@ -121,14 +151,13 @@ class FmtConfig(object):
             self[path[0]] = FmtConfig(value, self.__path + [path[0]], self.__root, self.__formattable, is_computed or self.__is_computed)
         else:
             if path[0] not in self:
-                self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root, self.__formattable, is_computed)
+                self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root, self.__formattable, is_computed or self.__is_computed)
             self[path[0]].setpath(path[1:], value, is_computed or self.__is_computed)
 
     def mergepath(self, path, value):
         if len(path) == 0:
             raise Exception("No path passsed")
         if len(path) == 1:
-            print(value)
             value = FmtConfig(value, self.__path + [path[0]], self.__root)
             if path[0] in self and self[path[0]].is_map():
                 for k, v in value.items():
@@ -191,13 +220,13 @@ class FmtConfig(object):
 
     def values(self):
         if not self.is_map():
-            raise CfgFormatException("Item {} is not a map".format(self.__name))
+            raise CfgFormatException("Item {} is not a map ".format(self.__name))
         for x in self.__subfields.values():
             yield x
 
     def items(self):
         if not self.is_map():
-            raise CfgFormatException("Item {} is not a map".format(self.__name))
+            raise CfgFormatException("Item {} is not a map ".format(self.__name))
         for x in self.__subfields.items():
             yield x
 
@@ -218,9 +247,12 @@ class FmtConfig(object):
 
     def __deepcopy__(self, memo):
         if self.__leaf:
-            return self.__raw
+            return FmtConfig(self.__raw, self.__path, self.__root, self.__formattable, self.__is_computed)
+
         subf_copy = copy.deepcopy(self.__subfields, memo)
-        cpy = FmtConfig(subf_copy, self.__path, self.__root)
+
+        cpy = FmtConfig(subf_copy, self.__path, self.__root, self.__formattable, self.__is_computed)
+
         if self.__default_computed_subfields_enabled:
             cpy.enable_computed_fields()
         return cpy
@@ -327,33 +359,34 @@ class FmtConfig(object):
     def format(self, _strip_escaped_eval = True, _check_computed = True, **kwargs):
         if not self.__formattable:
             return self.get_raw()
-        if self.__format_kwarg_obj is not None:
-            kwargobj = copy.deepcopy(self.__format_kwarg_obj)
-            for k, v in kwargs.items():
-                kwargobj[k] = v
-        else:
-            kwargobj = kwargs
+
         if not self.__leaf:
             return self.get_raw()
+
         if isinstance(self.__raw, str):
+            if _strip_escaped_eval:
+                self.set_format_kwargs(kwargs)
             formatted = self.__raw
             # Search for { which is not followed or preceeded by {
             while re.search('(?<!{){[^{]', formatted) is not None:
                 try:
                     if isinstance(formatted, str):
-                        formatted = formatted.format(self.__root, **kwargobj)
+                        formatted = formatted.format(self.__root, **self.__format_kwargs)
                     else:
-                        formatted = formatted.format(_strip_escaped_eval = False, **kwargobj)
+                        formatted = formatted.format(_strip_escaped_eval = False, **self.__format_kwargs)
                 except KeyError as e:
+                    # If default subfields are already enabled, there's an issue
+                    if self.__default_computed_subfields_enabled:
+                        raise
                     # Check if error would have arisen if computed fields presentt
-                    if self.__format_kwarg_obj is not None and _check_computed:
+                    if self.__format_kwargs is not None and _check_computed:
                         error_due_to_computed_fields = False
-                        self.__format_kwarg_obj.enable_computed_fields()
+                        self.__format_kwargs.enable_computed_fields()
                         try:
                             self.format(_strip_escaped_eval = False, _check_computed = False,
-                                        **kwargs)
+                                        **self.__format_kwargs)
 
-                            computed_keys = self.__format_kwarg_obj.get_computed_field_keys()
+                            computed_keys = self.__format_kwargs.get_computed_field_keys()
                             raise CfgFormatException(
                                 "Error formatting field {} '{}' due to unprovided field "
                                 "(likely one of {})"
@@ -361,7 +394,7 @@ class FmtConfig(object):
                             )
 
                         except Exception as e:
-                            self.__format_kwarg_obj.disable_computed_fields()
+                            self.__format_kwargs.disable_computed_fields()
 
                     raise
                 try:
@@ -386,6 +419,8 @@ class FmtConfig(object):
             if isinstance(evaled, str) and _strip_escaped_eval:
                 evaled = evaled.replace('$$(', '$(')
                 evaled = evaled.format()
+            if _strip_escaped_eval:
+                self.set_format_kwargs({})
             return evaled
         return self.__raw
 

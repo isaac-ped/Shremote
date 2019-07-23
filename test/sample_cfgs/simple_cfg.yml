@@ -7,7 +7,7 @@ hosts:
 programs:
   echo:
     start: echo {to_echo}
-    host: host1
+    hosts: host1
 
 computed_a: $( 15 + 2 )
 
@@ -16,17 +16,17 @@ computed_b: $( 10 + 5 + {0.computed_a} )
 commands:
     - program:
         start: echo "Hello World!"
-        host:
-          addr: host3.net
+        hosts:
+            - addr: host3.net
       begin: 0
 
     - program: echo
-      host: host1
-      to_echo: '{host_idx} {0.args.stuff}'
+      hosts: host1
+      to_echo: '{host_idx}'
       stuff: things
       begin: '{0.computed_b}'
 
     - program:
-        start: echo "Hello World: {host.name}"
-      host: [host1, host2]
+        start: 'echo "hello world {host.name}"'
+      hosts: [host1, host2]
       begin: '1.5'

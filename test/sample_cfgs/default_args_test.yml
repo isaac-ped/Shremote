@@ -2,6 +2,7 @@ programs:
     echo:
         start: echo {to_echo}
         hosts:
+            name: "local"
             addr: localhost
         defaults:
             to_echo: "Hello world!"

@@ -6,10 +6,10 @@ class TestSampleCfgs(unittest.TestCase):
 
     def test_default_args(self):
         cfg = load_cfg_file("sample_cfgs/default_args_test.yml")
-        self.assertEqual(cfg.commands[0].to_echo.format(), "Hello world!",
-                         "Default was not applied")
-        self.assertEqual(cfg.commands[1].to_echo.format(), "Goodbye world!",
-                         "Default was not overridden")
+        start1 = cfg.commands[0].to_echo.format(host=cfg.commands[0].hosts[0])
+        self.assertEqual(start1, "Hello world!", "Default was not applied")
+        start2 = cfg.commands[1].to_echo.format(host=cfg.commands[1].hosts[0])
+        self.assertEqual(start2, "Goodbye local", "Default was not overridden,  instead: %s" % start2)
 
     def test_computed_fields(self):
         cfg = load_cfg_file("sample_cfgs/test_computed_fields.yml")

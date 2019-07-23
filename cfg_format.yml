@@ -100,7 +100,7 @@ fields:
                         format:
                             type: str
                             flags: [required]
-                      - key: host
+                      - key: hosts
                         format:
                             type: reference
                             referent: [hosts]
@@ -181,7 +181,7 @@ fields:
                       - key: hosts
                         format:
                             type: map
-                            flags: [inherit, required]
+                            flags: [inherit]
                             parent: [.., program, hosts]
                       - key: begin
                         format:
@@ -202,3 +202,7 @@ fields:
                     - key: log_dir
                       format:
                           type: str
+                    - key: host
+                      format:
+                          type: defaultdict
+
