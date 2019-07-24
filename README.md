@@ -208,20 +208,20 @@ For `post_cmds`, after files are copied back to the local host
 
 * **Format**: List of maps
 * **Fields**:
- * cmd: A string with the command to execute
- * checked_rtn: If an integer, a non-matching return code will abort execution. Otherwise, set to `null`
+  * cmd: A string with the command to execute
+  * checked_rtn: If an integer, a non-matching return code will abort execution. Otherwise, set to `null`
 
 ##### files
 Specifies files to be copied from the local host to remote hosts
 
 * **Format**: Map of maps
 * **Fields**:
- * name: (automatically filled) defaults to the key that defines this file
- * src: The source location of the file on the local host
- * dst: The destination of the file on the remote host
- * hosts: Host(s) (or references to host(s)) onto which the file should be copied
+  * name: (automatically filled) defaults to the key that defines this file
+  * src: The source location of the file on the local host
+  * dst: The destination of the file on the remote host
+  * hosts: Host(s) (or references to host(s)) onto which the file should be copied
 * **Computed fields**:
- * out_dir: The local or remote log directory, depending on if it is used in `src` or `dst`
+  * out_dir: The local or remote log directory, depending on if it is used in `src` or `dst`
 
 ##### programs
 Specifies programs to be executed on remote hosts.
