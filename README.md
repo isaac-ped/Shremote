@@ -102,7 +102,7 @@ which are described in detail below.
 
 ## Full Configuration Format
 
-The [cfg_format.yml](configuration file format)
+The [cfg\_format.yml](configuration file format)
 lists all of the fields which are available, referencable, or required,
 in the configuration file.
 
@@ -111,7 +111,7 @@ The following is an overview of the configuration format and capabilities
 ### Capabilities
 
 #### References
-Certain fields in the [cfg_format.yml](format spec) have the type `reference`.
+Certain fields in the [cfg\_format.yml](format spec) have the type `reference`.
 These fields (`file.host`, `program.host`, and `command.program`) allow
 the config file to reference another section by referring to it with a key.
 
@@ -136,7 +136,7 @@ to `.format()`, so `{0.a}` is expanded into the contents of the
 field `a` at the root of the config.
 
 The fields of certain maps
-(marked with the flag `format_root` in the [cfg_format.yml](format spec))
+(marked with the flag `format_root` in the [cfg\_format.yml](format spec))
 are also passed in as keyword arguments to `.format()`
 
 For example, and field which is a child of a `command` may reference
