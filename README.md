@@ -201,7 +201,7 @@ The parameters passed to ssh calls for connecting to remote hosts.
 * **Overridden by**: `host.<host>.ssh`
 
 ##### init_cmds/post_cmds
-The commands are executed *on the local host* at the start/end of execution.
+These commands are executed *on the local host* at the start/end of execution.
 
 For `init_cmds`, before files are copied or any remote calls are made.
 For `post_cmds`, after files are copied back to the local host
@@ -210,6 +210,17 @@ For `post_cmds`, after files are copied back to the local host
 * **Fields**:
   * cmd: A string with the command to execute
   * checked_rtn: If an integer, a non-matching return code will abort execution. Otherwise, set to `null`
+
+##### hosts
+Remote hosts on which to execute commands
+
+* **Format**: Map of maps
+* **Fields**:
+  * name: (automatically filled) Defaults to the key that defines this host
+  * addr: The address (Hostname or IP) to use for ssh'ing
+  * ssh: (optional) overrides `ssh` above
+  * log_dir: (optional) Overrides `log_dir` above
+* **Referenced by**: `files.<file>.hosts`, `programs.<program>.hosts`, `commands.<command>.hosts`
 
 ##### files
 Specifies files to be copied from the local host to remote hosts
@@ -222,6 +233,7 @@ Specifies files to be copied from the local host to remote hosts
   * hosts: Host(s) (or references to host(s)) onto which the file should be copied
 * **Computed fields**:
   * out_dir: The local or remote log directory, depending on if it is used in `src` or `dst`
+* **Referenced by**: `commands.<command>.program`
 
 ##### programs
 Specifies programs to be executed on remote hosts.
