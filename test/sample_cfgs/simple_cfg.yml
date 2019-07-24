@@ -17,7 +17,7 @@ commands:
     - program:
         start: echo "Hello World!"
         hosts:
-            - addr: host3.net
+            addr: host3.net
       begin: 0
 
     - program: echo

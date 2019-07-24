@@ -2,205 +2,257 @@
 
 Execute commands remotely over SSH!
 
-`Usage: python shremote.py <config.yml> <label> [--test] [--export <loc>] [--stop-only]`
+Usage:
+```shell
+usage: shremote_new.py [-h] [--parse-test] [--get-only] [--out OUT]
+                       [--delete-remote] [--args ARGS]
+                       cfg_file label
 
-* `--test`: Runs through each command as fast as possible to ensure proper formatting
-* `--export`: Copies all log files to <loc> at end of test
-* `--stop-only`: Stops all programs present in the config
+Schedule remote commands over SSH
 
-I think the program is easier to understand from examples, so be sure to look at the config
-and sample yml files.
+positional arguments:
+  cfg_file         .yml cfg file
+  label            Label for resulting logs
 
-## Configuration
-
-The following is a sample configuration file. Details of each section are laid out below:
-```yaml
-# Declare the default ssh parameters
-ssh:
-    user: isaac-ped
-    key: '~/.ssh/id_rsa'
-    port: 22
-
-# These commands are run on the local machine before test begins
-# Use it to generate files used during testing
-init_cmds:
-    generate_client_file: 'python make_client_file.py --output {0.files.client_file.src}'
-
-# Copy files from the local machine to remote hosts
-files:
-    client_file:
-        src: 'my_test_file.dat'
-        dst: '{0.programs.log_dir}/my_test_file.dat'
-        host: clients
-
-# Hosts are machines used in the experiments
-hosts:
-    # The can consist of a single machine:
-    server:
-        addr: domain1.edu
-    # Or a group of machines:
-    clients:
-        - addr: domain2.edu
-        - addr: domain3.edu
-          ssh: # And can provide custom ssh parameters
-            user: domain3_user
-            key: domain3_key
-            port: 22
-
-# Not necessary, but can declare parameters here referencable from anywhere
-globals:
-    experiment_length: 60
-    my_param: 'parameter_value'
-
-# Next, define the programs that will be executed during the test
-programs:
-    # Programs all write logs to this base directory
-    log_dir: ~/logs/{0.label}/
-
-    # This program runs on the 'server' host
-    setup_exp:
-        host: server
-        start: 'cd /path/to/script && ./do_something {param_1} {other_param}'
-        stop: pkill do_something
-        check_rtn: 0 # Ensure the processs returns 0
-        log: # Automatically log all stdout and stderr to these files
-            out: setup_stdout.txt
-            err: setup_stderr.txt
-
-    run_exp:
-        host: clients
-        start: 'cd /path/to/script && ./run_experiment {param_2} {duration}'
-        stop: pkill run_experiment
-        log: # Put logs in this subdirectory
-            dir: experiment
-            out: experiment_{i}_stdout.txt # Label logs with the experiment number
-            err: experiment_{i}_stderr.txt
-
-# Finally, define the timecourse and parameters of execution
-commands:
-
-    setup_exp:
-        begin: -20 # Start 20 second before main experiment
-        param_1: '{0.args.setup_param}' # Get this parameter from startup args
-        other_param: '{0.globals.my_param}' # Get this one from global definitions
-
-    # Run the experiment two times, with a 60 second pause between
-    run_exp:
-        - begin: 0
-          duration: '{0.globals.experiment_length}' # Run for 60 seconds
-          enforce_duration: True # Make sure that it doesn't end early
-          param_2: '{0.args.exp_param}' # Get this from startup args
-
-        - begin: '{0.globals.experiment_length} * 2' # Math possible!
-          duration: '{0.globals.experiment_length}'
-          param_2: '{0.args.exp_param}'
+optional arguments:
+  -h, --help       show this help message and exit
+  --parse-test     Only test parsing of cfg
+  --get-only       Only get log files, do not run
+  --out OUT        Directory to output files into
+  --delete-remote  Deletes remote log directories
+  --args ARGS      Additional arguments which are passed to the config file
+                   (format 'k1:v1;k2:v2')
 ```
 
+## Basic Configuration Format
 
-The programs, commands, logs, and timing are all defined in a central yml file.
+The simplest Shremote config file is simply a list of commands,
+and the hosts on which they are to run:
 
-For ease of reproducing, a special `!include <file>` command is added to the yml parser.
-This allows portions of the config used across multiple files to be kept in a centralized location.
+```yaml
+commands:
+    # This program will execute on host1.net at time = 0 seconds (immediately)
+    - program:
+        start: echo "Hello World on Host 1"
+        hosts:
+            addr: host1.net
+      begin: 0
 
-Throughout the config file, different parts of the config can be referenced using python's
-string formatting syntax. The complete config is passed as the first argument to all formatting,
-such that if one defines `foo: bar` at the top level of the config, `qux: {0.foo}` will change to
-`qux: bar` after substitution.
+    # This program will execute on host2.net at time = 10 seconds
+    - program:
+        start: echo "Hello World on Host 2"
+        hosts:
+            addr: host2.net
+      begin: 10
+```
 
-Certain special variables are also available via substitution, such as `{0.label}`, which is
-the label passed in at runtime. Different parts of the config have their own variables
-(described below).
+Programs can also be be separated so that they can be referred to by name and reused:
 
-The required parts of the config file are:
+```yaml
+programs:
+    echo:
+        start: echo {to_echo}
+        # {to_echo} will be substituted later, within the command
+    log:
+        out: "echo_output.txt"
+        # stdout will be logged to this file,
+        # and collected automatically at the end
 
-### ssh:
+commands:
+    - program: echo
+      hosts:
+        addr: host1.net
+      to_echo: "Hello World with a reused program on host 1"
+      begin: 0
 
-The default SSH configuration by which to connect to the hosts. **Must** define:
-* `user`: The username with which to connect
-* `key`: A path to an private SSH-key
-* `port`: The port over which to connect
+    - program: echo
+      hosts:
+        addr: host2.net
+      to_echo: "Hello World wiht a reused program on host 2"
+      begin: 0
+```
 
-### hosts:
+Similarly, hosts can be separated for reuse
 
-A list of hosts on which programs can be run. Each host defines:
-* `addr`: The hostname or IP address at which the host can be reached
-* `ssh`: Optional SSH config (as above) which overrides the default config
+```yaml
+hosts:
+    host1:
+        addr: host1.net
+        ssh: # A host can also specify additional ssh information
+            user: my_username
+            key: ~/.ssh/my_sshkey
+            port: 1234
 
-**Note:** A "host" may actually be a *list* of hosts, in which case commands that specifies
-that host will be run on all specified machines
+programs:
+    echo:
+        start: echo {to_echo}
+        hosts: host1
+        # Host can be specified in either a program, or a command
 
-### logs:
+commands:
+    - program: echo
+      to_echo "Hello world: multiple levels of indirection!"
+      begin: 0
+```
 
-A dictionary mapping program names to log files. Log files will be rsynced locally at the end
-of the session.
+This much should be enough to run most tests!
 
-This section **must** define:
-* `dir`: The directory **on each host** to which log files will be recorded.
-Will be created if it does not exist.
+However, Shremote has many more capabilities,
+which are described in detail below.
 
-In addition, a log file may be specified for each program (defined below). Each log entry
-can specify:
-* `dir`: A subdirectory into which logs will be placed
-* `out`: Redirects stdout to this file
-* `err`: Redirects stderr to this file
-* `log`: Can be passed (fully formatted) to the program's execution string
+## Full Configuration Format
 
-Each log has available the variable:
-* `{i}`: If a program is run multiple times, or on multiple hosts, this index will distinguish log
-files from one another. (Behavior undefined if `{i}` is not used and multiple program instances
-are started)
-* `{host}`: Will substitute the address of the host on which the command is being run
+The [cfg_format.yml](configuration file format)
+lists all of the fields which are available, referencable, or required,
+in the configuration file.
 
-### programs:
+The following is an overview of the configuration format and capabilities
 
-This section defines a dictionary mapping each program name to the command used to execute that
-program.
+### Capabilities
 
-Each program has the following required fields:
-* `host`: The name of the host (as defined in `hosts:` above) on which the program should be run.
-**Note:** as stated above, a "host" may be a list of hosts on which the program will run
-simultaneously.
-* `start`: (Not strictly required if `stop` is defined) The command used to start the program. In addition to
-referencing global config variables (with `{0.field}`), it can also reference:
-  * `{var}` where `var:` is defined in the instance of the program (defined below).
-  * `{log}` which is substituted for the log filename as defined in the `logs:` config portion
+#### References
+Certain fields in the [cfg_format.yml](format spec) have the type `reference`.
+These fields (`file.host`, `program.host`, and `command.program`) allow
+the config file to reference another section by referring to it with a key.
 
-The following optional fields:
-* `stop`: The command used to stop execution of the program. Used if `duration` is present
-in the command arguments, or `--stop-only` is passed to the python program as a whole.
-* `fg`: If `True`, will execute the program in the foreground (and block execution till completion)
-rather than spawning a thread. Should only be used for short-lived or blocking commands.
-* `check_rtn`: If present, will stop execution if the return code of the program run doesn't match
-the value provided here. To verify correct execution of most programs, specify 0.
+This allows for the reuse of `host`s and `program`s within and throughout
+config files.
 
-### dirs:
+If the reference field is a string, it should refer to a key in the
+appropriate section. E.g. if a program specifies a host `host_foo`,
+the `hosts` section should have a host with the key `host_foo`.
 
-This is not required at all. This is just a place to put commonly used directories, and
-must be referred to with `{0.dirs.<dir>}`
+If the reference field is not a string, it should be a map which
+matches the format of the referent. E.g. a command may completely
+specify a program's start command, logs, etc.
 
-### init_cmds:
+#### Substitutions
+Throughout the config file, remote sections of the config file may
+referenced and inserted into most fields.
 
-A list of commands to be run locally before running anything remotely. Can be useful if, e.g.,
-a file must be generated which depends on some program execution's parameters.
+String formatting takes place via pythons `.format()` method.
+The root of the config file is always passed in as the first argument
+to `.format()`, so `{0.a}` is expanded into the contents of the
+field `a` at the root of the config.
 
-### files:
+The fields of certain maps
+(marked with the flag `format_root` in the [cfg_format.yml](format spec))
+are also passed in as keyword arguments to `.format()`
 
-A list of files to be copied to remote hosts at the start of shremote's execution
+For example, and field which is a child of a `command` may reference
+that specific command's fields.
 
-### commands:
+E.g., if a program's start string includes `{foo}`, the command
+may define a field `foo: "bar"`.
+Upon execution, the start string will substitute `{foo}` with `bar`.
 
-**The meat of the config!**
+##### Computed fields
+Certain substitutable fields dynamic, and are thus not specified
+in the config file directly.
+Those fields are provided by shremote at runtime, and may differ
+between executions of a command.
 
-A dictionary mapping the program instances to their arguments and the times at which they start.
+For example:
+* `{0.user}` will be substituted with the name of the user executing Shremote.
+* `{0.label}` will be substituted with the label provided to shremote on execution.
+* `{0.args.foo}` will be substituted with the value of the argument `foo`,
+which must have been provided by the user from the command line, such as:
+`--args="foo:bar"`, which will substitute `{0.args.foo}` for `bar`.
+* `{host.addr}` (within a command or program)
+will be substituted for the address of the host on which
+the currently executing command is running.
+* `{out_dir}` (within a `file`) will be substituted for the directory
+into which logs are placed
 
-Each command name should match a `program` (and optionally a `log`) as defined above.
+#### Evaluation
+Strings, or portions of strings, placed within `$(...)` will be run through
+python's `eval()` function before being used.
 
-Each command has the following fields, all optional:
-* `begin`: The time (in seconds) at which to start the command. Can include references and math.
- (e.g. `{0.experiment_duration} + 5`). Can be negative, to enforce commands running earlier.
- (defaults to 0).
-* `duration`: The duration for which the command should be executed (in seconds). The `stop`
-part of the program's definition will be run at this time, if present.
-* `enforce_duration`: If present and `True`, will halt execution of the shremote session
-if the program runs for less long than specified.
-* `var`: Where `var` is used in the program's `start` or `stop` definitions.
+This can be used to compute the time at which command should start,
+or to perform simple string substitution.
+
+E.g. `$(x + "y" * 5 + z)` will evaluate to `"xyyyyyz"`, and `$(40 + 2)`
+will evaluate to `42`.
+
+References may also be nested within evaluations.
+
+### Specifications
+
+Though the config file may contain as many fields as are useful for the
+task at hand, certain fields are used throughout the program.
+Of these, only `commands` is mandatory, but if others are present
+they must follow specified formats.
+
+The following are the utilized fields at the root level of the config:
+
+##### log_dir
+The directory into which logs are placed on remote hosts.
+
+**Default**: `~/shremote_logs`
+**Overridden by**: `hosts.<host>.log_dir`
+
+##### ssh
+The parameters passed to ssh calls for connecting to remote hosts.
+
+**Fields**
+* user: defaults to `{0.user}`
+* key: ssh key to use. Defaults to `~/.ssh/id_rsa`
+* port: defaults to 22
+**Overridden by**: `host.<host>.ssh`
+
+##### init_cmds/post_cmds
+The commands are executed *on the local host* at the start/end of execution.
+
+For `init_cmds`, before files are copied or any remote calls are made.
+For `post_cmds`, after files are copied back to the local host
+
+**Format**: List of maps
+**Fields**:
+* cmd: A string with the command to execute
+* checked_rtn: If an integer, a non-matching return code will abort execution. Otherwise, set to `null`
+
+##### files
+Specifies files to be copied from the local host to remote hosts
+
+**Format**: Map of maps
+**Fields**:
+* name: (automatically filled) defaults to the key that defines this file
+* src: The source location of the file on the local host
+* dst: The destination of the file on the remote host
+* hosts: Host(s) (or references to host(s)) onto which the file should be copied
+**Computed fields**:
+* out_dir: The local or remote log directory, depending on if it is used in `src` or `dst`
+
+##### programs
+Specifies programs to be executed on remote hosts.
+
+**Format**: Map of maps
+**Fields**:
+* name: (automatically filled) defaults to the key that defines this program
+* hosts: Host(s) (or references to host(s)) on which the program should be executed. Optional, and overridden by `hosts` in a `command` (if present).
+* start: The shell command used to start this program
+* stop: (optional) The shell command used to stop this program, if it is to run in the background, or to be stopped prematurely.
+* duration_reduced_error: (optional) If `true`, shremote will throw an error if the program than the command's `min_duration`. Defaults to `true`.
+* duration_exceeded_error`: (optional) If `true`, shremote will throw an error if the program lasts longer than the command's `max_duration`. Defaults to `false`.
+* bg: (optional) If `true`, the command will run in the background, and will have to be manually stopped with the `stop` command
+* defaults: (optional) Provides default arguments for string substitution. Overridden by fields in the `command`
+* log: A map containing:
+  * dir: (optional) A sub-directory into which logs should be placed
+  * out: (optional) A file to which stdout should be logged
+  * err: (optional) A file to which stderr should be logged
+**Computed fields**: See `commands.computed_fields` below
+
+##### commands:
+Specifies when and where to execute commands
+
+**Format**: List of maps
+**Fields**:
+* program: Program (or references to program) to execute
+* hosts: Host(s) (or references to host(s)) on which to execute the program. Overrides any host defined within the program.
+* begin: The time, relative to the start of the experiment, at which to run the command
+* min_duration: The minimum duration to run the command for. Only has an effect if `program.duration_reduced_error` is set to true
+* max_duration: The maximum duration for which the command is to be run. The command is killed after this duration is exceeded. If `program.duration_exceeded_error` is `true`, reaching this duration will raise an error
+**Computed fields**:
+* host_idx: If executing on multiple hosts, the index of the currently-executing host
+* log_dir: The full path to the log directory for this program, including `<program>.log.dir`. To be used if additional logs are to be produced
+* host: If executing on multiple hosts, the config map of the host on which the command is executed

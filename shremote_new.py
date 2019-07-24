@@ -487,7 +487,7 @@ if __name__ == '__main__':
     parser.add_argument('--out', type=str, default='.', help="Directory to output files into")
     parser.add_argument('--delete-remote', action='store_true', help='Deletes remote log directories')
     parser.add_argument('--args', type=str, required=False,
-                        help="Additional arguments for yml (format 'k1:v1;k2:v2')")
+                        help="Additional arguments which are passed to the config file (format 'k1:v1;k2:v2')")
 
     args = parser.parse_args()
 
