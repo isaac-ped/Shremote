@@ -2,7 +2,7 @@
 from __future__ import print_function
 
 from checked_process import shell_call, start_shell_call, start_ssh_call
-from cfg_loader import load_cfg_file
+from cfg_loader import load_cfg_file, CfgFormatException
 from include_loader import IncludeLoader
 from logger import * # log*(), set_logfile(), close_logfile()
 
@@ -83,6 +83,20 @@ class ShFile(object):
         self.local_out = os.path.join(local_out, cfg.get_root().label.format())
         self.cfg_src = cfg.src
         self.cfg_dst = cfg.dst
+
+    def validate(self):
+        for host in self.hosts:
+            try:
+                self.cfg_src.format(out_dir = self.local_out, host = host.cfg)
+            except (KeyError, CfgFormatException) as e:
+                log_error("Error formatting source of file {}: {}".format(self.name, e))
+                raise
+
+            try:
+                self.cfg_dst.format(out_dir = host.log_dir, host = host.cfg)
+            except (KeyError, CfgFormatException) as e:
+                log_error("Error formatting dest of file {}: {}".format(self.name, e))
+                raise
 
     def copy_to_host(self):
         for host in self.hosts:
@@ -232,9 +246,9 @@ class ShCommand(object):
             raise
 
     def validate(self):
-        for host in self.hosts:
+        for i, host in enumerate(self.hosts):
             try:
-                start_cmd = self.program.start_cmd(host, 0)
+                start_cmd = self.program.start_cmd(host, i)
             except KeyError as e:
                 log_error("Error validating command %s: %s" % (self.program.start.get_raw(), e))
                 raise
@@ -328,6 +342,7 @@ class ShRemote(object):
         self.cfg.args = args_dict
         self.cfg.label = label
         self.cfg.user = os.getenv('USER')
+        self.cfg.cfg_dir = os.path.dirname(cfg_file)
         log("Assuming user is : %s" % self.cfg.user)
 
         self.label = label
@@ -353,6 +368,10 @@ class ShRemote(object):
 
         for cmd1, cmd2 in itertools.combinations(self.commands, 2):
             cmd1.check_overlapping_logs(cmd2)
+
+        for file in self.files:
+            file.validate()
+
 
     def run_init_cmds(self):
         for cmd in self.init_cmds:
