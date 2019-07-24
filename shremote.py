@@ -1,1153 +1,509 @@
 #!/usr/bin/env python
-
 from __future__ import print_function
-from collections import defaultdict
-import pprint
-import json
-import shutil
-import time
-import os
-import sys
-import subprocess
-from subprocess import CalledProcessError
-import yaml
-import time
-import re
+
+from checked_process import shell_call, start_shell_call, start_ssh_call
+from cfg_loader import load_cfg_file
+from include_loader import IncludeLoader
+from logger import * # log*(), set_logfile(), close_logfile()
+
+import threading # For threading.Event
 import argparse
-import copy
+import pprint
+import os
+import json
 import signal
-import traceback
-from threading import Thread
-import threading
+import itertools
 
-COLORS = dict(
-    END='\033[0m',
-    WARNING = '\033[93m',
-    ERROR = '\033[31m',
-    INFO = '\033[0;32m'
-)
-
-test_mode = False
-
-start_time = time.time()
-
-LOGFILE = None
-
-LOG_DEBUG = True
-
-def log_(s, **print_kwargs):
-    if (LOGFILE is not None):
-        LOGFILE.write(s + '\n')
-    if LOG_DEBUG:
-        print(s, **print_kwargs)
-
-def log(*args, **kwargs):
-    s = "DEBUG {:.1f}: ".format(time.time() - start_time)
-    log_(s + " ".join([str(x) for x in args]), **kwargs)
-
-def log_info(*args, **kwargs):
-    s = COLORS['INFO'] + 'INFO {:.1f}: '.format(time.time() - start_time)
-    log_(s + " ".join([str(x) for x in args]) + COLORS['END'], **kwargs)
-
-def log_warn(*args, **kwargs):
-    s = COLORS["WARNING"] + "WARNING: " + ' '.join([str(x) for x in args]) + COLORS['END']
-    log_(s, **kwargs)
-
-def log_error(*args, **kwargs):
-    s = COLORS['ERROR'] + "\n________________________________________________\n"
-    s += "ERROR: " + " ".join([str(x) for x in args])
-    s += "\n________________________________________________" + COLORS['END'] + "\n"
-    log_(s, **kwargs)
-
-fatality = False
-error_event = threading.Event()
-
-def log_fatal(*args, **kwargs):
-    global fatality
-    if fatality:
-        print("DOUBLE FATALITY: ", *args, **kwargs)
-        exit(-1)
-
-    print("\n________________________________________________")
-    print("------- FATAL ERROR: ", *args, **kwargs)
-    print("________________________________________________\n")
-
-    print("Attempting to stop everything!")
-    fatality = True
-    try:
-        if TestRunner.instance().initialized:
-            TestRunner.instance().stop_all()
-            TestRunner.instance().get_logs()
-            TestRunner.instance().write_log()
-    except:
-        log_warn("Ran into error attempting to stop!")
-        traceback.print_exc()
-    print("Exiting")
-    exit(-1)
-
-def sigint_handler(signal, frame):
-    log_fatal("CTRL+C PRESSED!!")
-
-signal.signal(signal.SIGINT, sigint_handler)
-
-def call(cmd, enforce_duration=None, check_return=False, raise_error=False):
-    log("Executing ", cmd)
-    start = time.time()
-    try:
-        if enforce_duration is not None:
-            log("Ensuring command executes for at least %d" % enforce_duration)
-        output = subprocess.check_output(cmd, shell=True)
-        if len(output) > 0:
-            log("Command ", cmd, "output: ", output)
-    except CalledProcessError as err:
-        if len(err.output) > 0:
-            log("Command ", cmd, "output: ", err.output)
-        if check_return is not  False:
-            if err.returncode != check_return:
-                log_error("Command ", cmd, "\n\treturned: ", err.returncode,
-                          ". Expected: ", check_return,
-                          "\n\tIf this command should have executed anyway, add `check_rtn: False` to command")
-                log_error(traceback.format_exc())
-                error_event.set()
-                if raise_error:
-                    raise
-    end = time.time()
-    duration = end - start
-    if enforce_duration is not None and test_mode == False:
-        if duration < enforce_duration:
-            log_error("Command  ", cmd, "executed for ", int(duration), "seconds. Expected: ", enforce_duration)
-            error_event.set()
-
-class BadExecException(Exception):
+class ShException(Exception):
     pass
 
-class Config(object):
+class ShLocalCmd(object):
 
-    instance_ = None
+    def __init__(self, cfg, event=None):
+        self.cmd = self.cfg.cmd.format().replace('\n', ' ')
+        self.checked_rtn = self.cfg.checked_rtn.format()
+        self.event = event
 
-    @classmethod
-    def clear_instance(cls):
-        cls.instance_ = None
+    def execute(self):
+        shell_call(self.cmd, shell = True, stop_event = self.event,
+                   checked_rtn = self.checked_rtn)
 
-    @classmethod
-    def instance(cls):
-        if cls.instance_ is None:
-            raise Exception("Config instance not instantiated")
-        return cls.instance_
+class ShHost(object):
 
-    @classmethod
-    def format(cls, st, **kwargs):
-        if cls.instance_ is None:
-            raise Exception("Config instance not instantiated")
+    RSYNC_FROM_CMD = \
+            'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{ssh.user}@{addr}:{src}" "{dst}"'
 
-        # TODO: Regex match, in case string contains \{
-        while '{' in st:
-            try:
-                st = st.format(cls.instance_, **kwargs)
-            except Exception as e:
-                log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
-                raise
+    RSYNC_TO_CMD = \
+            'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{dst}" "{ssh.user}@{addr}:{src}"'
 
-        return cls.eval(st)
+    def __init__(self, cfg):
+        self.name = cfg.name.format()
+        self.addr = cfg.addr.format()
+        self.ssh = cfg.ssh
+        self.cfg = cfg
+        label = cfg.get_root().label.format()
+        self.log_dir = os.path.join(cfg.log_dir.format(), label)
 
-    @staticmethod
-    def innermost_exec_str(st):
-        # To start, find all $( which aren't $$(
-        matches = re.finditer(r'(^|[^$])(\$\()', st)
-        starts = [m.start(2) for m in matches]
-        if len(starts) == 0:
-            return None
-        # The last match will be innermost or alone
-        start_idx = starts[-1]
-        end_idx = None
-        stack = []
-        for i in range(len(st)-1, start_idx, -1):
-            if st[i] == ')':
-                stack.append(i)
-            if st[i] == '(' and len(stack) > 0:
-                end_idx = stack.pop()
-        if end_idx is None:
-            raise BadExecException("Cannot find end of exec string: {}".format(st[last_match_idx:]))
-        return st[start_idx:end_idx+1]
+    def __eq__(self, other):
+        return self.addr == other.addr and self.log_dir == other.log_dir
 
-    @classmethod
-    def eval(cls, st):
-        if isinstance(st, str):
-            eval_grp = cls.innermost_exec_str(st)
-            while eval_grp is not None:
-                # Cut off the starting $, leaving (...)
-                to_eval = eval_grp[1:]
-                rep_with = str(eval(to_eval))
+    def __hash__(self):
+        return hash(self.addr + self.log_dir)
 
-                st = st.replace(eval_grp, rep_with)
-
-                eval_grp = cls.innermost_exec_str(st)
-
-            # Cast if possible
-            try:
-                return int(st)
-            except:
-                try:
-                    return float(st)
-                except:
-                    return st
-        return st
-
-    def __init__(self, data, **kwargs):
-        if Config.instance_ is None:
-            Config.instance_ = self
-
-        self.__dict__['dict'] = {}
-
-        orig_data = data.copy()
-        orig_data.update(kwargs)
-
-        for k, v in orig_data.items():
-            if isinstance(v, dict):
-                self.dict[k] = Config(v)
-            elif isinstance(v, list):
-                attr = []
-                for v2 in v:
-                    if isinstance(v2, dict):
-                        attr.append(Config(v2))
-                    else:
-                        attr.append(v2)
-                self.dict[k] = attr
-            else:
-                self.dict[k] = v
-
-    def __str__(self):
-        return pprint.pformat(self.full_dict)
-
-    def set_permanent(self, **kwargs):
-        self.dict.update(kwargs)
-
-    @property
-    def full_dict(self):
-        d = {}
-        for k, v in self.dict.items():
-            if isinstance(v, Config):
-                d[k] = v.full_dict
-            else:
-                d[k] = v
-        return d
-
-    def items(self):
-        return self.dict.items()
-
-    def get(self, key, default):
-        return self.eval(self.dict.get(key, default))
-
-    def __contains__(self, key):
-        return key in self.dict
-
-    def __getitem__(self, key):
-        return self.eval(self.dict[key])
-
-    def __getattr__(self, key):
-        if key in self.dict:
-            return self.eval(self.dict[key])
+    def copy_from(self, src, dst, background=False):
+        cmd = self.RSYNC_FROM_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
+        if background:
+            exec_fn = start_shell_call
         else:
-            raise Exception("{} is not in config with fields {}".format(key, self.dict.keys()))
+            exec_fn = shell_call
+        return exec_fn(cmd, auto_shlex=True, checked_rtn = 0)
 
-    def __setattr__(self, key, value):
-        self.dict[key] = value
+    def copy_to(self, src, dst, background=False):
+        self.exec_cmd('mkdir -p %s' % os.path.dirname(dst), background=False, checked_rtn = 0)
 
-    def formatted(self, key, **kwargs):
-        if isinstance(self.dict[key], Config):
-            return self.dict[key]
-        if isinstance(self.dict[key], str):
-            st = self.dict[key]
-            while '{' in st:
-                try:
-                    st = st.format(self.instance(), **kwargs)
-                except Exception as e:
-                    log_error("Error formatting:\n\t{}\nwith\n\t{}\nError: {}".format(st, kwargs, e))
-                    raise
-
-            # $() can be escaped: $$() => '$()'
-            st = self.eval(st)
-            if isinstance(st, str):
-                st = st.replace('$$','$')
-            return st
-
-        st = str(self.dict[key])
-        st = self.eval(st)
-        if isinstance(st, str):
-            st = st.replace('$$', '$')
-        return st
-
-SSH_CMD = 'ssh -p {port} -i {key} {user}@{addr} "{cmd}"'
-SCP_OUT_CMD = 'scp -P {port} -i {key} {src} {user}@{addr}:{dst}'
-SCP_IN_CMD = 'scp -P {port} -i {key} -r {user}@{addr}:{src} {dst}'
-RSYNC_IN_CMD = "rsync -av -e 'ssh -p {port} -i {key}' {user}@{addr}:{src} {dst}"
-
-class Host:
-
-    hosts_ = {}
-
-    @classmethod
-    def get(cls, host_name):
-        return cls.hosts_[host_name]
-
-    def __init__(self, host_name, host_cfg, index=0):
-        log("Initializing {} to point to {}".format(host_name, host_cfg))
-
-        self.index = None
-        self.name = host_name
-        self.addr = host_cfg.addr
-        if 'ssh' in host_cfg:
-            self.ssh = host_cfg.ssh
+        cmd = self.RSYNC_TO_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
+        if background:
+            exec_fn = start_shell_call
         else:
-            self.ssh = Config.instance().ssh
+            exec_fn = shell_call
+        return exec_fn(cmd, auto_shlex=True, checked_rtn = 0)
 
-        if host_name not in Host.hosts_:
-            Host.hosts_[host_name] = {}
-
-        Host.hosts_[host_name][index] = self
-
-    def rsync_from(self, src, dst):
-        cmd = RSYNC_IN_CMD.format(src=src, dst=dst, addr=self.addr, **self.ssh.dict)
-        call(cmd, None, None)
-
-    def verify(self, cmd):
-        full_cmd = SSH_CMD.format(cmd=cmd, addr=self.addr, **self.ssh.dict)
-        log("Verified: {}".format(full_cmd))
-
-    def execute(self, cmd, do_wait, enforce_duration, check_return):
-        full_cmd = SSH_CMD.format(cmd=cmd, addr = self.addr, **self.ssh.dict)
-        if not do_wait:
-            log("Running {} in background on {}".format(cmd, self.name))
-            thread = Thread(target=call, args = (full_cmd, enforce_duration, check_return))
-            thread.daemon = True
-            thread.start()
+    def exec_cmd(self, start, event=None, background=True, **kwargs):
+        if background:
+            exec_fn = start_ssh_call
         else:
-            log("Running {} in foreground on {}".format(cmd, self.name))
-            return call(full_cmd, enforce_duration, check_return)
+            exec_fn = ssh_call
+        return exec_fn(start, self.ssh, self.addr, stop_event = event, **kwargs)
 
+class ShFile(object):
 
-    @classmethod
-    def init_hosts(cls, host_list):
-        for name, hosts in host_list.items():
-            if isinstance(hosts, list):
-                for i, host in enumerate(hosts):
-                    Host(name, host, i)
-            else:
-                Host(name, hosts)
+    def __init__(self, cfg, local_out):
+        self.name = cfg.name.format()
+        self.hosts = [ShHost(h) for h in cfg.hosts]
+        self.local_out = os.path.join(local_out, cfg.get_root().label.format())
+        self.cfg_src = cfg.src
+        self.cfg_dst = cfg.dst
 
-class Log:
+    def copy_to_host(self):
+        for host in self.hosts:
+            src = self.cfg_src.format(out_dir = self.local_out, host = host.cfg)
+            dst = self.cfg_dst.format(out_dir = host.log_dir, host = host.cfg)
+            host.copy_to(src, dst, background=False)
 
-    logs_ = {}
+class ShLog(object):
 
-    @classmethod
-    def get(cls, name):
-        if name in cls.logs_:
-            return cls.logs_[name]
-        return None
+    DIRS_COPIED = set()
 
-    @classmethod
-    def has(cls, name):
-        return name in cls.logs_
+    def __init__(self, cfg):
+        self.subdir = cfg.dir
 
-    @classmethod
-    def get_log_dir(cls):
-        if 'logs' in Config.instance():
-            return Config.instance().logs.dir
-        elif 'log_dir' in Config.instance().programs:
-            return Config.instance().programs.log_dir
-        else:
-            raise Exception("Cannot locate logs in cfg.logs.dir or cfg.programs.log_dir")
-
-    def __init__(self, log_name, log_cfg):
-        log("Initializing log {}".format(log_name))
-        self.copied = defaultdict(lambda: False)
-        self.cfg = log_cfg
-
-        self.has_dir = 'dir' in log_cfg
-
-        self.log_dir = Log.get_log_dir()
-
-        self.dir = log_cfg.get('dir', '')
-        self.full_dir = Config.format(os.path.join(self.log_dir, self.dir, ''))
-
-        if 'log' in log_cfg:
-            self.log_ = os.path.join(self.full_dir, log_cfg.log)
-        else:
-            self.log_ = None
-
-        if 'out' in self.cfg:
-            self.out = os.path.join(self.full_dir, self.cfg.out)
+        if 'out' in cfg:
+            self.out = cfg.out
         else:
             self.out = None
 
-        if 'err' in self.cfg:
-            self.err = os.path.join(self.full_dir, self.cfg.err)
+        if 'err' in cfg:
+            self.err = cfg.err
         else:
             self.err = None
 
-        Log.logs_[log_name] = self
+    def assert_no_overlap(self, other):
+        if not self.subdir.format(host_idx=0) == other.subdir.format(host_idx=0):
+            return
 
-    def dict(self, **kwargs):
-        if 'i' not in kwargs:
-            kwargs['i'] = 0
-        if 'host' not in kwargs:
-            kwargs['host'] = '*HOST*'
-        if self.log_ is not None:
-            return dict(log=Config.format(self.log_, **kwargs))
-        return dict()
+        if self.out is not None:
+            if self.out.format(host_idx=0) == other.out.format(host_idx=0):
+                raise ShException("Overlapping output log file: {}".format(self.out.format(host_idx=0)))
 
-    def suffix(self, **kwargs):
+        if self.err is not None:
+            if self.err.format(host_idx=0) == other.err.format(host_idx=0):
+                raise ShException("Overlapping error log file: {}".format(self.err.format(host_idx=0)))
+
+    def log_dir(self, host, host_idx):
+        return os.path.join(host.log_dir, self.subdir.format(host_idx=host_idx))
+
+    def suffix(self, host, host_idx):
         suffix = ''
         if self.out is not None:
-            suffix += ' > {}'.format(Config.format(self.out, **kwargs))
+            suffix += ' > {}'.format(os.path.join(host.log_dir,
+                                                  self.subdir.format(host_idx = host_idx,
+                                                                     host = host.cfg),
+                                                  self.out.format(host_idx = host_idx,
+                                                                  host = host.cfg)))
         if self.err is not None:
-            suffix += ' 2> {}'.format(Config.format(self.err, **kwargs))
+            suffix += ' 2> {}'.format(os.path.join(host.log_dir,
+                                                   self.subdir.format(host_idx = host_idx,
+                                                                      host = host.cfg),
+                                                   self.err.format(host_idx = host_idx,
+                                                                   host = host.cfg)))
         return suffix
 
-    def copy_local(self, hosts, dst_base, i_offset=0):
+    def remote_directories(self, hosts):
+        dirs = set()
+        for i, host in enumerate(hosts):
+            dirs.add((host, os.path.join(host.log_dir, self.subdir.format(host_idx = i))))
+        return dirs
+
+    def copy_local(self, hosts, local_dir, event = None, background=False):
         threads = []
-        for i, host in hosts.items():
-            if self.has_dir:
-                src = Config.format(self.full_dir, i=i+i_offset)
-                dst = Config.format(os.path.join(dst_base, self.dir), i=i+i_offset, host=host.addr)
-                # Have to make the directory manually, or else rsync might try to make it twice
-                # and fail
-                call("mkdir -p {}".format(dst), raise_error=True)
 
-                thread = Thread(target=host.rsync_from, args=(src, dst))
-                thread.start()
-                threads.append(thread)
-            else:
-                for f in self.cfg.dict.values():
-                    src = Config.format(os.path.join(self.full_dir, f), i=i+i_offset, host=host.addr)
-                    thread = Thread(target=host.rsync_from, args=(src, dst_base))
-                    thread.start()
-                    threads.append(thread)
-        for thread in threads:
-            thread.join()
-        self.copied[i_offset] = True
+        for i, host in enumerate(hosts):
+            remote_out = os.path.join(host.log_dir, self.subdir.format(host_idx = i))
 
-    @classmethod
-    def init_logs(cls, log_list):
-        for name, log in log_list.items():
-            if name != 'dir':
-                Log(name, log)
+            if (host.addr, remote_out) in self.DIRS_COPIED:
+                continue
 
-class Program:
+            shell_call(["mkdir", "-p", local_dir],
+                       checked_rtn = 0, raise_error=True, stop_event = event)
 
-    programs_ = {}
+            threads.append(host.copy_from(remote_out, local_dir, background=True))
 
-    @classmethod
-    def get(cls, name):
-        return cls.programs_[name]
+            self.DIRS_COPIED.add((host.addr, remote_out))
 
-    def __init__(self, name, program_cfg):
-        self.name = name
-        self.cfg = program_cfg
-        log("Config is ", self.cfg)
-        self.fg = self.cfg.get('fg', False)
+        if background:
+            return threads
+        else:
+            for thread in threads:
+                thread.join()
 
-        self.start = self.cfg.get('start', None)
-        self.stop = self.cfg.get('stop', None)
+class ShProgram(object):
 
-        self.check_rtn = self.cfg.get('check_rtn', 0)
+    def __init__(self, cfg):
+        self.name = cfg.name.format()
+        self.log = ShLog(cfg.log)
+        self.start = cfg.start
+        self.stop = cfg.get('stop', None)
+        self.shorter_error = cfg.duration_reduced_error.format()
+        self.longer_error = cfg.duration_exceeded_error.format()
+        self.checked_rtn = cfg.checked_rtn.format()
+        self.background = cfg.bg.format()
 
-        self.default_kwargs = self.cfg.get('defaults', Config({}))
+    def start_cmd(self, host, host_idx):
+        log_dir = self.log.log_dir(host, host_idx)
+        return self.start.format(host_idx = host_idx,
+                                 log_dir = log_dir,
+                                 host = host.cfg) +\
+                self.log.suffix(host, host_idx)
 
-        Program.programs_[name] = self
+    def stop_cmd(self, host_idx):
+        if self.stop is not None:
+            return self.stop.format(host_idx = host_idx)
+        else:
+            return None
 
+class ShCommand(object):
+
+    def __init__(self, cfg, event):
+        self.cfg = cfg
+        self.event = event
+        self.begin = cfg.begin.format()
+        self.program = ShProgram(cfg.program)
+        self.hosts = [ShHost(x) for x in cfg.hosts]
+        self.max_duration = cfg.max_duration.format()
+        self.min_duration = cfg.min_duration.format()
+
+        if self.min_duration and not self.program.shorter_error:
+            log_warn("Min duration specified but shorter_duration_error is false for: {}"
+                     .format(self.pformat()))
+            self.min_duration = None
+
+    def get_logs(self, local_dir, event=None):
+        return self.program.log.copy_local(self.hosts, local_dir, background=True, event=event)
+
+    def remote_log_directories(self):
+        return self.program.log.remote_directories(self.hosts)
+
+    def raw(self):
+        self_dict = self.cfg.get_raw()
+        if 'host' in self_dict['program']:
+            del self_dict['program']['host']
+        return self_dict
+
+    def pformat(self):
+        return pprint.pformat(self.raw())
+
+    def check_overlapping_logs(self, other):
         try:
-            self.hosts = Host.get(self.cfg.host)
-        except:
-            log_error("Error initiating host ", self.cfg.host, " for program ", name)
+            self.program.log.assert_no_overlap(other.program.log)
+        except ShException:
+            log_error("Instances of two commands log to the same file, and will clobber each other:")
+            log_error(self.pformat())
+            log_error(other.pformat())
             raise
 
-        self.init_i = self.cfg.get('init_i', 0)
-
-        self.log = Log.get(name)
-        if self.log is not None:
-            print(name, "Log is", self.log.dict())
-
-    def cmd(self, **new_kwargs):
-        kwargs = self.default_kwargs.full_dict
-        kwargs.update(new_kwargs)
-        if self.log is not None:
-            suffix = self.log.suffix(**kwargs)
-            kwargs.update(self.log.dict(**kwargs))
-        else:
-            suffix = ''
-
-        if self.start is not None:
-            return '{} {}'.format(
-                    Config.format(self.start, **kwargs),
-                    suffix,
-            )
-        elif self.stop is not None:
-            return self.stop_cmd(**kwargs)
-
-    def stop_cmd(self, delay = None, **new_kwargs):
-        kwargs = self.default_kwargs.full_dict
-        kwargs.update(new_kwargs)
-        if self.stop is None:
-            return None
-        if delay is not None:
-            return 'sleep {}; {}'.format(
-                    delay,
-                    Config.format(self.stop, **kwargs)
-            )
-        return Config.format(self.stop, **kwargs)
-
-    @classmethod
-    def init_programs(self, program_list):
-        for name, prog in program_list.items():
+    def validate(self):
+        for host in self.hosts:
             try:
-                Program(name, prog)
-            except:
-                log_error("Error initializing program ", name)
+                start_cmd = self.program.start_cmd(host, 0)
+            except KeyError as e:
+                log_error("Error validating command %s: %s" % (self.program.start.get_raw(), e))
                 raise
-
-def safe_eval(st, label=''):
-    try:
-        return eval(st)
-    except NameError as e:
-        log_error("Error evaluating expression '{}' due to [{}]".format(label, e))
-        raise
-
-
-class Command:
-
-    def __init__(self, program_name, cmd_cfg, index = None):
-        self.cfg = cmd_cfg
-
-        self.begin = 0
-        self.duration = None
-
-        if 'begin' in cmd_cfg:
-            begin_raw = cmd_cfg.formatted('begin')
-            try:
-                begin_evaled = safe_eval(begin_raw, 'begin')
-                if str(begin_evaled) != str(begin_raw): # Means that 'eval' did something
-                    log_warn("Specifying evaluatable begin without $(...) is deprecated: {}".format(begin_raw))
-                self.begin = float(begin_evaled)
-            except TypeError: # Begin shouldn't have to be eval'd again
-                self.begin = float(begin_raw)
-
-        self.index = index if index is not None else 0
-        self.program = Program.get(program_name)
-
-        self.log = Log.get(program_name)
-        self.name = program_name
-
-        if 'duration' in cmd_cfg:
-            duration_raw = cmd_cfg.formatted('duration', **self.dict())
-            try:
-                dur = safe_eval(duration_raw, 'duration')
-                if str(dur) != str(duration_raw): # Means that 'eval' did something
-                    log_warn("Specifying evaluatable duration without $(...) is deprecated: {}".format(duration_raw))
-            except TypeError: ## This is fine, duration shouldn't have to be evaluated again
-                dur = duration_raw
-                pass
-
-            self.duration = float(dur)
-            if self.program.start is None:
-                log_fatal("{}: Cannot specify duration when program is missing 'start'".format(program_name))
-        elif self.program.start is not None and self.program.stop is not None:
-                log_fatal("{}: Must specify duration if program contains both 'start' and 'stop'".format(program_name))
-
-
-        if 'enforce_duration' in self.program.cfg:
-            enforce_duration = self.program.cfg.formatted('enforce_duration', **self.dict())
-            if enforce_duration == True:
-                if self.duration is not None:
-                    self.enforced_duration = self.duration - 1
-                else:
-                    self.enforced_duration = enforce_duration
-            else:
-                self.enforced_duration = self.program.cfg.enforce_duration
-        else:
-            if self.duration is not None:
-                self.enforced_duration = self.duration - 1
-            else:
-                self.enforced_duration = None
-
-        if 'enforce_duration' in cmd_cfg:
-            enforce_duration = cmd_cfg.formatted('enforce_duration', **self.dict())
-            if enforce_duration == True:
-                if self.duration is None:
-                    log_fatal("Specified enforce duration = True with no duration specified")
-                self.enforced_duration = self.duration - 1
-            else:
-                self.enforced_duration = enforce_duration
-
-    def dict(self, **kwargs):
-        d = {}
-        for k, v in self.cfg.items():
-            d[k] = self.cfg.formatted(k, begin=self.begin, duration=self.duration, **kwargs)
-        if self.log is not None:
-            d.update(self.log.dict(**kwargs))
-        d.update(begin=self.begin)
-        if self.duration is not None:
-            d.update(duration=self.duration)
-        d.update(kwargs)
-        return d
-
-    def pretty(self, **kwargs):
-        return self.name + " : " + pprint.pformat(self.dict(i=self.index, **kwargs))
-
-    def verify(self):
-        log("Verifying command : {}".format(self.name))
-
-        for host_i, host in self.program.hosts.items():
-            i = self.index + host_i + self.program.init_i
-            cmd_kwargs = self.dict(i=i, host=host.addr)
-            cmd = self.program.cmd(**cmd_kwargs)
-            host.verify(cmd)
-
-    def run(self):
-        log_info("Running command : {}".format(self.pretty()))
-
-        starts = []
-        stops = []
-
-        for host_i, host in self.program.hosts.items():
-            i = self.index + host_i + self.program.init_i
-
-            cmd_kwargs = self.dict(i=i, host=host.addr)
-
-            cmd = self.program.cmd(**cmd_kwargs)
-            starts.append(cmd)
-            host.execute(cmd, self.program.fg, self.enforced_duration, self.program.check_rtn)
-
-            if self.program.stop is not None:
-                stop_cmd = self.program.stop_cmd(self.duration, **cmd_kwargs)
-                stops.append(stop_cmd)
-                host.execute(stop_cmd, False, None, False)
-
-        cmd_kwargs['name_'] = self.name
-        cmd_kwargs['time_'] = float(time.time())
-        if self.duration  is not None:
-            cmd_kwargs['stop_time_'] = float(time.time() + self.duration)
-
-        cmd_kwargs['starts_'] = starts
-        cmd_kwargs['stops_'] = stops
-        return cmd_kwargs
-
-    def stop(self):
-        log("Stopping command : {}".format(self.pretty()))
-
-        for host_i, host in self.program.hosts.items():
-            i = self.index + host_i + self.program.init_i
-
-            cmd_kwargs = copy.deepcopy(self.dict(i=i))
-
-            cmd = self.program.stop_cmd(**cmd_kwargs)
-
-            if cmd is not None:
-                host.execute(cmd, True, None, False)
-
-        cmd_kwargs['name_'] = self.name
-        cmd_kwargs['stop_time_'] = float(time.time())
-
-        return cmd_kwargs
-
-class ImportException(Exception):
-    pass
-
-#https://stackoverflow.com/questions/528281/how-can-i-include-an-yaml-file-inside-another
-class Loader(yaml.SafeLoader):
-
-    def __init__(self, stream):
 
         try:
-            self.test_runner = TestRunner.instance()
-        except AttributeError:
-            log_warn("Test runner not instantiated")
-            self.test_runner = None
+            stop_cmd = self.program.stop_cmd(0)
+        except KeyError as e:
+            log_error("Error validating command %s: %s" % (self.program.stop.get_raw(), e))
+            raise
 
+        if (stop_cmd is None) != (self.max_duration is None):
+            log_error("If one of stop_cmd and max_duration is specified, "
+                      "the other should be as well: {}".format(start_cmd))
+            raise Exception("Cannot specify one of stop_cmd and max_duration")
 
-        try :
-            self._root = os.path.split(stream.name)[0]
-        except AttributeError:
-            self._root = ''
+        if self.program.background and self.max_duration is not None and stop_cmd is None:
+            log_error("Must specify stop_cmd if program is backgrounded "
+                      "and max_duration is specified: {}".format(start_cmd))
+            raise Exception("Program would not be stoppable")
 
-        super(Loader, self).__init__(stream)
+        if self.program.background and self.min_duration is not None:
+            log_error("Cannot specify min_duration for a backgrounded program: {}"
+                      .format(start_cmd))
 
-    def include(self, node):
+    def start(self, log_entry):
+        threads = []
+        for i, host in enumerate(self.hosts):
+            host_log_entry = {}
+            start_cmd = self.program.start_cmd(host, i)
+            stop_cmd = self.program.stop_cmd(i)
 
-        filename = os.path.join(self._root, self.construct_scalar(node))
+            host_log_entry['addr_'] = host.addr
+            host_log_entry['start_'] = start_cmd
+            host_log_entry['stop_'] = stop_cmd
+            host_log_entry['time_'] = float(time.time())
 
-        with open(filename, 'r') as f:
-            rtn = yaml.load(f, Loader)
-
-            if self.test_runner is not None:
-                self.test_runner.included_files.append(filename)
-            return rtn
-
-    def load_import(self, import_str):
-        split_import = import_str.split('::')
-
-        filename = os.path.join(self._root, split_import[0])
-
-        with open(filename, 'r') as f:
-            rtn = yaml.load(f, Loader)
-            if self.test_runner is not None:
-                self.test_runner.included_files.append(filename)
-
-            for i, sub_node in enumerate(split_import[1:]):
-                if sub_node in rtn:
-                    rtn = rtn[sub_node]
-                else:
-                    raise ImportException("Could not find {} in {}".format(':'.join(split_import[1:i+2]), filename))
-            return rtn
-
-
-    def do_import(self, node):
-        import_str = self.construct_scalar(node)
-        return self.load_import(import_str)
-
-    @classmethod
-    def merge_dicts(cls, d1, d2):
-        d3 = d1.copy()
-        for k, v in d2.items():
-            if k in d3:
-                if isinstance(d3[k], dict):
-                    d3[k] = cls.merge_dicts(d3[k], v)
-                else:
-                    d3[k] = v
+            log_info("Executing on %s : %s" % (host.addr, start_cmd))
+            if not self.program.background:
+                t = host.exec_cmd(start_cmd, self.event,
+                                  background=True, daemon=True,
+                                  stop_cmd = stop_cmd,
+                                  min_duration = self.min_duration,
+                                  max_duration = self.max_duration,
+                                  duration_exceeded_error = self.program.longer_error,
+                                  checked_rtn = self.program.checked_rtn,
+                                  log_end = True)
+                threads.append(t)
             else:
-                d3[k] = v
-        return d3
+                start_name = start_cmd.split()[0]
+                t = host.exec_cmd(start_cmd, self.event,
+                                  background=True, daemon=True,
+                                  checked_rtn = self.program.checked_rtn, max_duration = self.max_duration,
+                                  log_end = True)
+                threads.append(t)
 
-    def inherit(self, node):
+                sleep_stop_cmd = 'sleep {}; {}'.format(self.max_duration, stop_cmd)
+                stop_sleep_cmd = 'pkill sleep'
+                t = host.exec_cmd(sleep_stop_cmd, self.event,
+                                  background=True, daemon=True,
+                                  stop_cmd = stop_sleep_cmd,
+                                  min_duration = self.max_duration,
+                                  max_duration = self.max_duration + 1,
+                                  log_end = True, name = 'stop %s' % start_name)
+                threads.append(t)
 
-        import_str = self.construct_scalar(node)
-        lines = import_str.splitlines()
-        import_str = lines[0]
-        rest = '\n'.join(lines[1:])
+            host_log_entry.update(self.raw())
+            log_entry.append(host_log_entry)
 
-        imported = self.load_import(import_str)
-        merger = yaml.load(rest, Loader)
+        return threads
 
-        if merger is not None:
-            imported = self.merge_dicts(imported, merger)
-        return imported
+class ShRemote(object):
 
-Loader.add_constructor('!include', Loader.include)
-Loader.add_constructor('!import', Loader.do_import)
-Loader.add_constructor("!inherit", Loader.inherit)
+    def sigint_handler(self, signal, frame):
+        log_error("CTRL+C PRESSED!")
+        self.event.set()
 
-class TestRunner:
+    def __init__(self, cfg_file, label, out_dir, args_dict):
+        self.event = threading.Event()
+        signal.signal(signal.SIGINT, self.sigint_handler)
 
-    instance_ = None
-
-    @classmethod
-    def instance(cls):
-        return cls.instance_
-
-    def open_log(self):
-        global LOGFILE
-        LOGFILE = open(os.path.join(self.output_dir, 'shremote.log'), 'w')
-
-    def close_log(self):
-        LOGFILE.close()
-
-    def __init__(self, cfg_file, label, out_dir, export_loc, test_run, args_dict):
-        if TestRunner.instance_ is None:
-            TestRunner.instance_ = self
-        else:
-            log_fatal("Cannot instantiate multiple TestRunners")
-        self.initialized = False
-
-        self.output_dir = os.path.join(out_dir, label) + '/'
-
-        self.included_files = []
-
-        self.test_run = test_run
+        self.output_dir = os.path.join(out_dir, label, '')
+        log("Making output directory: %s" % self.output_dir)
+        shell_call('mkdir -p "%s"' % self.output_dir, auto_shlex=True, checked_rtn = 0)
+        set_logfile(os.path.join(self.output_dir, 'shremote.log'))
+        log("Made output dir")
 
         self.cfg_file = cfg_file
-        with open(cfg_file, 'r') as f:
-            self.raw_cfg = yaml.load(f, Loader)
+        log("Loading %s" % cfg_file)
+        self.cfg = load_cfg_file(cfg_file)
 
-        call("mkdir -p %s" % self.output_dir, raise_error=True)
-        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir, 
-                          local_out = self.output_dir)
-        self.open_log()
-        self.cfg.set_permanent(remote_out = Log.get_log_dir())
-        log("Initialized cfg at {}, label {}".format(cfg_file, label))
+        self.cfg.args = args_dict
+        self.cfg.label = label
+        self.cfg.user = os.getenv('USER')
+        log("Assuming user is : %s" % self.cfg.user)
+
+        self.label = label
+
+
+        commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
+        self.commands = sorted(commands, key = lambda cmd: cmd.begin)
+
+        self.init_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('init_cmds', [])]
+        self.post_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('post_cmds', [])]
 
         self.event_log = []
-        if export_loc is not None:
-            self.export_dir = os.path.join(export_loc, label)
-            self.do_export = True
-        else:
-            self.do_export = False
 
-        Host.init_hosts(self.cfg.hosts)
+        self.files = []
+        for cfg in self.cfg.get('files', {}).values():
+            self.files.append(ShFile(cfg, self.output_dir))
 
-        if 'log' in self.cfg:
-            Log.init_logs(self.cfg.logs)
-        else:
-            for name, prog in self.cfg.programs.items():
-                if name != 'log_dir':
-                    if 'log' in prog:
-                        Log(name, prog.log)
+        self.validate()
 
-        self.programs = {}
-        for name, prog in self.cfg.programs.items():
-            if name not in self.cfg.commands:
-                continue
-            try:
-                self.programs[name] = Program(name, prog)
-            except:
-                log_error("Error initializing program ", name)
-                raise
+    def validate(self):
+        for cmd in self.commands:
+            cmd.validate()
 
-        self.commands = []
-        for name, cmd_group in self.cfg.commands.dict.items():
-            if isinstance(cmd_group, list):
-                for i, cmd in enumerate(cmd_group):
-                    self.commands.append(Command(name, cmd, index=i))
-            else:
-                self.commands.append(Command(name, cmd_group))
-        self.initialized = True
-
-
-    @property
-    def sorted_commands(self):
-        return sorted(self.commands, key = lambda c: c.begin)
-
-    def export_logs(self):
-        log("Exporting logs...")
-        shutil.copytree(self.output_dir, self.export_dir)
-
-    def verify_init_cmds(self):
-        log_info("Verifying init cmds")
-        for cmd, _ in self.cfg.init_cmds.items():
-            cmd = self.cfg.init_cmds.formatted(cmd)
-            if isinstance(cmd, Config):
-                cmd = cmd.formatted("cmd")
-            cmd = cmd.replace('\n', ' ')
-            log("Verified command {}".format(cmd))
+        for cmd1, cmd2 in itertools.combinations(self.commands, 2):
+            cmd1.check_overlapping_logs(cmd2)
 
     def run_init_cmds(self):
-        for cmd, _ in self.cfg.init_cmds.items():
-            cmd = self.cfg.init_cmds.formatted(cmd)
-            check_rtn = 0
-            if isinstance(cmd, Config):
-                check_rtn = cmd.get('check_rtn', 0)
-                cmd = cmd.formatted("cmd")
-            cmd = cmd.replace('\n', ' ')
-            call(cmd, raise_error=True, check_return=check_rtn)
-
-    def verify_post_cmds(self):
-        log_info("Verifying post cmds")
-        if 'post_cmds' not in self.cfg:
-            return
-        for cmd, _ in self.cfg.post_cmds.items():
-            cmd = self.cfg.post_cmds.formatted(cmd)
-            if isinstance(cmd, Config):
-                cmd = cmd.formatted("cmd")
-            cmd = cmd.replace('\n', ' ')
-            log("Verified command {}".format(cmd))
+        for cmd in self.init_cmds:
+            cmd.execute()
 
     def run_post_cmds(self):
-        if 'post_cmds' not in self.cfg:
-            return
-        for cmd, _ in self.cfg.post_cmds.items():
-            cmd = self.cfg.post_cmds.formatted(cmd)
-            check_rtn = 0
-            if isinstance(cmd, Config):
-                check_rtn = cmd.get('check_rtn', 0)
-                cmd = cmd.formatted('cmd')
-            cmd = cmd.replace('\n', ' ')
-            call(cmd, raise_error=True, check_return=check_rtn)
-
-    def verify_files(self):
-        log_info("Verifying files")
-        for name, file in self.cfg.files.dict.items():
-            log("Verifying {}".format(name))
-            src = file.formatted('src')
-            dst = file.formatted('dst')
-            dir = os.path.dirname(dst)
-
-            if 'host' in file:
-                file_hosts = [file.host]
-            elif 'hosts' in file:
-                file_hosts = file.hosts
-            else:
-                log_fatal("File {} does not specify host or hosts".format(name))
-
-            for host_name in file_hosts:
-                hosts = Host.get(host_name)
-                for host in hosts.values():
-                    ssh = host.ssh
-                    addr = host.addr
-
-                    ssh_cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir,
-                                             addr=addr, **ssh.dict)
-                    cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
-
-                    log('Verfied mkdir: {}'.format(ssh_cmd))
-                    log('Verified scp: {}'.format(cmd))
+        for cmd in self.post_cmds:
+            cmd.execute()
 
     def copy_files(self):
-        for name, file in self.cfg.files.dict.items():
-            src = file.formatted('src')
-            dst = file.formatted('dst')
-            dir = os.path.dirname(dst)
+        for file in self.files:
+            file.copy_to_host()
 
-            if 'host' in file:
-                file_hosts = [file.host]
-            elif 'hosts' in file:
-                file_hosts = file.hosts
-            else:
-                log_fatal("File {} does not specify host or hosts".format(name))
-
-            for host_name in file_hosts:
-                hosts = Host.get(host_name)
-                for host in hosts.values():
-                    ssh = host.ssh
-                    addr = host.addr
-
-                    ssh_cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir,
-                                             addr=addr, **ssh.dict)
-                    call(ssh_cmd, check_return=0, raise_error=True)
-
-                    cmd = SCP_OUT_CMD.format(src=src, dst=dst, addr=addr, **ssh.dict)
-                    call(cmd, check_return=0)
-
-    def kill_sleep(self):
-        killed_hosts = set()
+    def delete_remote_logs(self):
+        remote_dirs = set()
         for cmd in self.commands:
-            prog = cmd.program
-            hosts = prog.hosts
-            for i, host in hosts.items():
-                if host in killed_hosts:
-                    continue
-                ssh = host.ssh
-                cmd = SSH_CMD.format(cmd = 'pkill sleep', addr = host.addr, **ssh.dict)
-                call(cmd, check_return=False, raise_error=False)
-                log("Ran 'pkill sleep' on %s" % host.addr)
-                killed_hosts.add(host)
+            remote_dirs |= cmd.remote_log_directories()
 
-    def delete_dirs(self):
+        log_info("About to delete the following directories:")
+        for host, remote_dir in remote_dirs:
+            log_info("%s: %s" % (host.addr, remote_dir))
+
+        time.sleep(5)
+
         threads = []
-        already_deleted = set()
-        for cmd in self.commands:
-            prog = cmd.program
-            hosts = prog.hosts
-            for i, host in hosts.items():
-                if prog.log is None:
-                    continue
-                dir = prog.log.full_dir.format(i=i)
-                ssh = host.ssh
-
-                if (dir, host.addr) not in already_deleted:
-                    cmd = SSH_CMD.format(cmd = 'rm -rf %s' % dir, addr = host.addr, **ssh.dict)
-                    thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=False, raise_error=False))
-                    thread.start()
-                    threads.append(thread)
-                    already_deleted.add((dir, host.addr))
-        for thread in threads:
-            thread.join()
-
-    def mkdirs(self):
-        threads = []
-        already_made = set()
-        for cmd in self.commands:
-            prog = cmd.program
-            hosts = prog.hosts
-            for i, host in hosts.items():
-                if prog.log is None:
-                    continue
-                dir = prog.log.full_dir.format(i=i)
-                ssh = host.ssh
-
-                if (dir, host.addr) not in already_made:
-                    cmd = SSH_CMD.format(cmd = 'mkdir -p %s' % dir, addr = host.addr, **ssh.dict)
-                    thread = Thread(target=call, args=(cmd,), kwargs=dict(check_return=0, raise_error=True))
-                    thread.start()
-                    threads.append(thread)
-                    already_made.add((dir, host.addr))
-                else:
-                    log("Already made %s on %s" % (dir, host.addr))
+        event = threading.Event()
+        for host, remote_dir in remote_dirs:
+            del_cmd = 'rm -rf %s' % remote_dir
+            threads.append(host.exec_cmd(del_cmd, event=event, background=True, checked_rtn = 0))
 
         for thread in threads:
             thread.join()
 
-    def show_commands(self):
-        log("*****  List of commands to run: ")
-        for command in self.sorted_commands:
-            log(command.pretty())
+        if event.is_set():
+            log_error("Error deleting remote logs!")
 
-    def verify_commands(self):
-        log_info("Verifying commands")
-        for command in self.sorted_commands:
-            command.verify()
+    def mk_remote_dirs(self):
+        remote_dirs = set()
+        for cmd in self.commands:
+            remote_dirs |= cmd.remote_log_directories()
+
+        threads = []
+        event = threading.Event()
+        for host, remote_dir in remote_dirs:
+            mkdir_cmd = 'mkdir -p %s' % remote_dir
+            threads.append(host.exec_cmd(mkdir_cmd, event = event, background=True, checked_rtn = 0))
+
+        for thread in threads:
+            thread.join()
+
+        if event.is_set():
+            raise Exception("Error making remote directories")
+
+    def get_logs(self):
+        log_info("Copying logs into {}".format(self.output_dir))
+        threads = []
+        event = threading.Event()
+        for cmd in self.commands:
+            threads.extend(cmd.get_logs(self.output_dir))
+
+        for thread in threads:
+            thread.join()
+
+        if event.is_set():
+            log_error("Error encountered getting logs!")
+
+        shell_call(['cp', self.cfg_file, self.output_dir], raise_error=True)
+        shell_call(['cp', self.cfg_file, os.path.join(self.output_dir, 'shremote_cfg.yml')], raise_error=True)
+        for filename in set(IncludeLoader.included_files):
+            shell_call(['cp', filename, self.output_dir], raise_error=True)
+
+        with open(os.path.join(self.output_dir, 'event_log.json'), 'w') as f:
+            json.dump(self.event_log, f, indent=2)
 
     def run_commands(self):
-        min_begin = min(c.begin for c in self.commands)
+        if self.event.is_set():
+            log_error("Not running commands! Execution already halted")
+            return
+        min_begin = self.commands[0].begin
         start_time = time.time() - min_begin
 
         elapsed = 0
         last_begin = 0
-        for command in self.sorted_commands:
-            elapsed = time.time() - start_time
-            delay = command.begin - elapsed
+        max_end = 0
 
-            if (delay > 0):
+        for cmd in self.commands:
+            elapsed = time.time() - start_time
+            delay = cmd.begin - elapsed
+
+            if delay > 0:
                 log("Sleeping for %d" % delay)
-                if not self.test_run:
-                    if error_event.wait(delay):
-                        log_fatal("Error encountered in other thread!")
-                else:
-                    time.sleep(.1)
-            elif last_begin != command.begin and delay > .001:
-                log_warn("Falling behind on command execution by %.1f " % delay)
+                if self.event.wait(delay):
+                    log_error("Error encountered in other thread! Stopping execution")
+                    return
+            elif last_begin != cmd.begin and delay > .1:
+                log_warn("Falling behind on execution by %.1f s" % delay)
 
-            last_begin = command.begin
-            try:
-                self.event_log.append(command.run())
-            except Exception:
-                traceback.print_exc()
-                log_fatal("Error attempting to run command ", command.pretty())
+            last_begin = cmd.begin
+            cmd.start(self.event_log)
 
-        try:
-            max_end = max(c.begin + c.duration for c in self.commands if c.duration is not None)
-            elapsed = time.time() - start_time
-            delay = max_end - elapsed
-            if not self.test_run:
-                if error_event.wait(delay):
-                    log_fatal("Error encountered in other thread!")
-        except Exception:
-            pass
+            max_end = max(max_end, cmd.begin + \
+                                    max(cmd.max_duration if cmd.max_duration is not None else 0,
+                                        cmd.min_duration if cmd.min_duration is not None else 0))
 
-    def stop_all(self):
-        for command in self.sorted_commands:
-            self.event_log.append(command.stop())
+        elapsed = time.time() - start_time
+        delay = max_end - elapsed
+        if self.event.wait(delay):
+            log_error("Error encountered in other thread during final wait period!")
+            time.sleep(1)
 
-
-    def get_logs(self):
-        call("mkdir -p %s" % self.output_dir, raise_error=True)
-
-        logs = set()
-        for command in self.commands:
-            program = command.program
-            if program.log is not None:
-                if not program.log.copied[command.index]:
-                    program.log.copy_local(program.hosts, self.output_dir, command.index)
-
-        call('cp {} {}/'.format(self.cfg_file, self.output_dir), raise_error=True)
-        call('cp {} {}/shremote_cfg.yml'.format(self.cfg_file, self.output_dir), raise_error=True)
-
-        for filename in self.included_files:
-            call('cp {} {}/'.format(filename, self.output_dir), raise_error=True)
-
-
-    def write_log(self):
-        output = open(os.path.join(self.output_dir, 'event_log.json'), 'w')
-        json.dump(self.event_log, output, indent=2)
-
-    def verify(self):
-        try:
-            self.verify_init_cmds()
-        except Exception as e:
-            log_error("Error verifying init cmds")
-            raise
-
-        try:
-            self.verify_files()
-        except Exception as e:
-            log_error("Error verifying files to copy")
-            raise
-
-        try:
-            self.verify_commands()
-        except Exception as e:
-            log_error("Error verifying remote commands")
-            raise
-
-        try:
-            self.verify_post_cmds()
-        except Exception as e:
-            log_error("Error verifying post cmds")
-            raise
+    def stop(self):
+        self.event.set()
 
     def run(self):
-        self.verify()
-
-        if self.do_export:
-            if self.test_run:
-                self.export_dir += '__TEST'
-            if os.path.exists(self.export_dir):
-                log_warn("Export directory {} already exists! " \
-                         "Will NOT export at end of test".format(self.export_dir))
-                self.do_export = False
-                time.sleep(2)
-            else:
-                log("Exporting to {} at end of test".format(self.export_dir))
-                time.sleep(1)
-
-        self.mkdirs()
+        self.mk_remote_dirs()
         self.run_init_cmds()
         self.copy_files()
-        self.show_commands()
         self.run_commands()
-
         self.get_logs()
-        self.write_log()
         self.run_post_cmds()
 
-        if self.do_export:
-            self.export_logs()
-        else:
-            log("Skipping log export")
+        log_info("Done with test!")
+        close_logfile()
 
-        log("Done with test!")
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Run remote commands')
+    parser = argparse.ArgumentParser(description="Schedule remote commands over SSH")
     parser.add_argument('cfg_file', type=str, help='.yml cfg file')
-    parser.add_argument('label', type=str, help='Label for resulting logs and sql dump')
-    parser.add_argument('--test', action='store_true', help='run through each command quickly')
-    parser.add_argument('--parse-test', action='store_true', help='Only test parsing of the cfg')
-    parser.add_argument('--export', type=str, required=False, help='Location to place files')
-    parser.add_argument('--get-only', action='store_true', help='only retrieve files')
-    parser.add_argument('--stop-only', action='store_true', help='run only stop commands')
-    parser.add_argument('--out', type=str, default=".", help=('output directory'))
-    parser.add_argument('--no-kill-sleep', action='store_true', help='Prevents killing "sleep" at start of experiment')
-    parser.add_argument('--delete_log_dir', action='store_true', help='Deletes remote log directories')
+    parser.add_argument('label', type=str, help='Label for resulting logs')
+    parser.add_argument('--parse-test', action='store_true', help='Only test parsing of cfg')
+    parser.add_argument('--get-only', action='store_true', help='Only get log files, do not run')
+    parser.add_argument('--out', type=str, default='.', help="Directory to output files into")
+    parser.add_argument('--delete-remote', action='store_true', help='Deletes remote log directories')
     parser.add_argument('--args', type=str, required=False,
-                        help='additional arguments for yml (format k1:v1;k2:v2')
+                        help="Additional arguments which are passed to the config file (format 'k1:v1;k2:v2')")
 
     args = parser.parse_args()
 
-    if args.test:
-        test_mode = True
-
-    args_dict = {}
+    sh_args = {}
     if args.args is not None:
-        entries = args.args.split(';')
-        for entry in entries:
-            k, v = entry.split(':')
-            args_dict[k] = v
-            log("Adding arg: {} = {}".format(k, v))
+        for entry in args.args.split(';'):
+            k, v = entry.split(":")
+            sh_args[k] = v
 
-    tester = TestRunner(args.cfg_file, args.label, args.out, args.export, args.test, args_dict)
+    shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args)
 
-
-    if args.stop_only:
-        tester.stop_all()
-    elif args.get_only:
-        tester.get_logs()
-    elif args.parse_test:
-        tester.verify()
+    if args.parse_test:
+        exit(0)
+    if args.get_only:
+        shremote.get_logs()
     else:
-        if not args.no_kill_sleep:
-            tester.kill_sleep()
-        if args.delete_log_dir:
-            tester.delete_dirs()
-        tester.run()
-        tester.close_log()
-
+        if args.delete_remote:
+            shremote.delete_remote_logs()
+        shremote.run()
