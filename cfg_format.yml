@@ -10,6 +10,9 @@ computed_fields:
     - key: args
       format:
           type: defaultdict
+    - key: cfg_dir
+      format:
+          type: str
 
 fields:
     - key: log_dir
@@ -91,7 +94,6 @@ fields:
                       - key: name
                         format:
                             type: key
-                        default: null
                       - key: src
                         format:
                             type: str
@@ -104,7 +106,7 @@ fields:
                         format:
                             type: reference
                             referent: [hosts]
-                            flags: [list_ok]
+                            flags: [list_ok, required]
           computed_fields:
               - key: out_dir
                 format:
