@@ -12,7 +12,8 @@ programs:
             err: echo.err
     bgecho:
         start: >-
-            bash ~/Projects/Shremote/launch_in_bg.sh bash ~/Projects/Shremote/start_sleeping.sh 100 {log_dir}/bgecho.txt
+            bash ~/Projects/Shremote/launch_in_bg.sh
+            bash ~/Projects/Shremote/start_sleeping.sh 100 {log_dir}/bgecho.txt
         stop: pkill sleep
         bg: true
         hosts: localhost
