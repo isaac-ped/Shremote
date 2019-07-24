@@ -176,6 +176,31 @@ will evaluate to `42`.
 
 References may also be nested within evaluations.
 
+#### Inclusion
+One yaml file, or parts of a yaml file, may be included in another
+in one of three ways:
+
+**Inclusion**: Copy the entire file into the specified map
+```yaml
+included_section: !include file/to/include.yml
+```
+
+**Importing**: Copy a section of the included file.
+In this case, copies `field.to.include` into `imported_section`
+```yaml
+imported_section: !import included/file.yml::field::to::include
+```
+
+**Inheritance**: Copies a section included file, but lets you override fields of it.
+This syntax is weird, and in no way is standard yaml.
+The first line following the `|` provides the file/section to include.
+Following lines override fields in included section.
+```yaml
+inherited_section: !inherit |
+    sample_cfgs/includable.yml::entry_one
+    sub_key2: new_value2
+```
+
 ### Specifications
 
 Though the config file may contain as many fields as are useful for the
