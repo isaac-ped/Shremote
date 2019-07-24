@@ -41,6 +41,10 @@ class CfgLoader(object):
     def load_cfg(self, raw_cfg):
         cfg = FmtConfig(raw_cfg)
         self._expand_cfg_format(cfg, [], self.format, [], False, True)
+        cfg.enable_computed_fields()
+        for element in cfg.children(recursive=True):
+            if element.is_leaf():
+                element.format()
         cfg.disable_computed_fields()
         return cfg
 
