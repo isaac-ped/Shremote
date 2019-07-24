@@ -407,6 +407,7 @@ class ShRemote(object):
             raise Exception("Error making remote directories")
 
     def get_logs(self):
+        log_info("Copying logs into {}".format(self.output_dir))
         threads = []
         event = threading.Event()
         for cmd in self.commands:
@@ -460,7 +461,7 @@ class ShRemote(object):
         delay = max_end - elapsed
         if self.event.wait(delay):
             log_error("Error encountered in other thread during final wait period!")
-            time.sleep(5)
+            time.sleep(1)
 
     def stop(self):
         self.event.set()
