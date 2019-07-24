@@ -222,13 +222,15 @@ class FmtConfig(object):
         if not self.is_map():
             raise CfgFormatException("Item {} is not a map ".format(self.__name))
         for x in self.__subfields.values():
-            yield x
+            if self.__default_computed_subfields_enabled or not x.is_computed():
+                yield x
 
     def items(self):
         if not self.is_map():
             raise CfgFormatException("Item {} is not a map ".format(self.__name))
         for x in self.__subfields.items():
-            yield x
+            if self.__default_computed_subfields_enabled or not x[1].is_computed():
+                yield x
 
     def children(self, recursive = False):
         if self.is_map():
