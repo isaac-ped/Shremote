@@ -57,8 +57,8 @@ class CheckProc(object):
 
             if valid_rtn is not None:
                 if rtn_code != valid_rtn:
-                    log_error("Command:\n\t%s\nReturned: %d\nExpected: %d " %
-                              (self.name, rtn_code, valid_rtn),
+                    log_error("Command:\n\t%s\nReturned: %d\nExpected: %d\n" %
+                              (self.args, rtn_code, valid_rtn),
                               "If this is not an error, add `checked_rtn: None` to command")
                     raise CheckedProcessException(self.args)
 

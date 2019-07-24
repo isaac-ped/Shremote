@@ -166,6 +166,7 @@ class CfgLoader(object):
                             "Parent format {} does not exist in {}"
                             .format(inherited_field_name, inherited_field))
             self._expand_cfg_format(cfg, field_path, inherited_fmt_path[-1], fmt_path, False, True)
+            return inherited_fmt_path[-1]
 
     def _expand_cfg_override(self, cfg, field_path, fmt, fmt_path, exists):
         override = fmt['overrides']
@@ -182,29 +183,32 @@ class CfgLoader(object):
                                              .format(override))
             self._expand_cfg_format(cfg, field_path, reference_fmt, fmt_path, False, True)
 
-    def _expand_cfg_format(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
-        if cfg.haspath(field_path) and 'list_ok' in fmt['flags']:
-            raw_cfg = cfg.getpath(field_path).get_raw()
-            if not isinstance(raw_cfg, list):
-                cfg.setpath(field_path, [raw_cfg])
-            if not fmt['type'] == 'list':
-                if 'parent' in fmt:
-                    fmt['parent'] = ['..'] + fmt['parent']
-                fmt['flags'].remove('list_ok')
-                fmt['format'] = copy.deepcopy(fmt)
-                fmt['type'] = 'list'
-                if 'inherit' in fmt['flags']:
-                    fmt['flags'].remove('inherit')
+    def _make_into_list(self, cfg, field_path, fmt):
+        raw_cfg = cfg.getpath(field_path).get_raw()
+        if not isinstance(raw_cfg, list):
+            cfg.setpath(field_path, [raw_cfg])
+        if not fmt['type'] == 'list':
+            if 'parent' in fmt:
+                fmt['parent'] = ['..'] + fmt['parent']
+            fmt['format'] = copy.deepcopy(fmt)
+            fmt['format']['flags'].remove('list_ok')
+            fmt['type'] = 'list'
+            if 'inherit' in fmt['flags']:
+                fmt['flags'].remove('inherit')
+            if 'referent' in fmt:
+                del fmt['referent']
 
+    def _expand_cfg_format(self, cfg, field_path, fmt, fmt_path, reference_depth, exists):
+
+        if cfg.haspath(field_path) and 'list_ok' in fmt['flags']:
+            self._make_into_list(cfg, field_path, fmt)
 
         is_primitive = isinstance(fmt['type'], list) or fmt['type'] in self.TYPES
+
         if is_primitive:
             self._expand_cfg_primitive(cfg, field_path, fmt, exists)
-
-        if fmt['type'] == 'map':
+        elif fmt['type'] == 'map':
             self._expand_cfg_map(cfg, field_path, fmt, fmt_path, reference_depth, exists)
-            if 'inherit' in fmt['flags']:
-                self._expand_cfg_inherit(cfg, field_path, fmt, fmt_path + [fmt], reference_depth, exists)
         elif fmt['type'] == 'list':
             self._expand_cfg_list(cfg, field_path, fmt, fmt_path, exists)
         elif fmt['type'] == 'reference':
@@ -213,8 +217,12 @@ class CfgLoader(object):
             self._expand_cfg_override(cfg, field_path, fmt, fmt_path, exists)
         elif fmt['type'] == 'key':
             pass
-        elif not is_primitive:
-            raise Exception("HOW DID YOU DO THIS")
+        else:
+            raise Exception("HOW DID YOU DO THIS: %s" % fmt['type'])
+
+        if 'inherit' in fmt['flags']:
+            fmt = self._expand_cfg_inherit(cfg, field_path, fmt, fmt_path + [fmt], reference_depth, exists)
+
 
     def _expand_cfg_field(self, cfg, field_path, field, fmt_path, reference_depth, exists):
         field_required = 'required' in field['format']['flags']

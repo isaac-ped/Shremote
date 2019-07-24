@@ -7,7 +7,7 @@ computed_string: $( 'x' * {0.computed_42} )
 commands:
     - program:
         start: echo "{to_echo}"
-        host:
+        hosts:
             addr: localhost
       begin: '{0.computed_42}'
       to_echo: '{0.computed_string}'

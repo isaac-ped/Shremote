@@ -4,7 +4,7 @@ escaped: '{{0.referenceable}}'
 commands:
     - program:
         start: echo "Hello world"
-        host:
+        hosts:
             addr: localhost
       begin: 0
       reference: "{0.referenceable}"

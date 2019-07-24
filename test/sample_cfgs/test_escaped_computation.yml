@@ -5,7 +5,7 @@ reference_escape: '{0.escaped_computation}'
 commands:
     - program:
         start: echo "hello world"
-        host:
+        hosts:
             addr: localhost
       begin: 0
       computed: '{0.computed_string}'

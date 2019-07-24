@@ -40,6 +40,7 @@ class ShHost(object):
         self.name = cfg.name.format()
         self.addr = cfg.addr.format()
         self.ssh = cfg.ssh
+        self.cfg = cfg
         label = cfg.get_root().label.format()
         self.log_dir = os.path.join(cfg.log_dir.format(), label)
 
@@ -76,14 +77,18 @@ class ShHost(object):
 
 class ShFile(object):
 
-    def __init__(self, cfg, local_out, label):
+    def __init__(self, cfg, local_out):
         self.name = cfg.name.format()
-        self.host = [ShHost(h) for h in cfg.host]
-        self.src = cfg.src.format(out_dir = os.path.join(local_out, label))
-        self.dst = cfg.dst.format(out_dir = os.path.join(cfg.host.log_dir, label))
+        self.hosts = [ShHost(h) for h in cfg.hosts]
+        self.local_out = os.path.join(local_out, cfg.get_root().label.format())
+        self.cfg_src = cfg.src
+        self.cfg_dst = cfg.dst
 
     def copy_to_host(self):
-        self.host.copy_to(self.src, self.dst, background=False)
+        for host in self.hosts:
+            src = self.cfg_src.format(out_dir = self.local_out, host = host.cfg)
+            dst = self.cfg_dst.format(out_dir = host.log_dir, host = host.cfg)
+            host.copy_to(src, dst, background=False)
 
 class ShLog(object):
 
@@ -121,12 +126,16 @@ class ShLog(object):
         suffix = ''
         if self.out is not None:
             suffix += ' > {}'.format(os.path.join(host.log_dir,
-                                                  self.subdir.format(host_idx = host_idx),
-                                                  self.out.format(host_idx = host_idx)))
+                                                  self.subdir.format(host_idx = host_idx,
+                                                                     host = host.cfg),
+                                                  self.out.format(host_idx = host_idx,
+                                                                  host = host.cfg)))
         if self.err is not None:
             suffix += ' 2> {}'.format(os.path.join(host.log_dir,
-                                                   self.subdir.format(host_idx = host_idx),
-                                                   self.err.format(host_idx = host_idx)))
+                                                   self.subdir.format(host_idx = host_idx,
+                                                                      host = host.cfg),
+                                                   self.err.format(host_idx = host_idx,
+                                                                   host = host.cfg)))
         return suffix
 
     def remote_directories(self, hosts):
@@ -171,7 +180,9 @@ class ShProgram(object):
 
     def start_cmd(self, host, host_idx):
         log_dir = self.log.log_dir(host, host_idx)
-        return self.start.format(host_idx = host_idx, log_dir = log_dir) +\
+        return self.start.format(host_idx = host_idx,
+                                 log_dir = log_dir,
+                                 host = host.cfg) +\
                 self.log.suffix(host, host_idx)
 
     def stop_cmd(self, host_idx):
@@ -187,7 +198,7 @@ class ShCommand(object):
         self.event = event
         self.begin = cfg.begin.format()
         self.program = ShProgram(cfg.program)
-        self.hosts = [ShHost(x) for x in cfg.host]
+        self.hosts = [ShHost(x) for x in cfg.hosts]
         self.max_duration = cfg.max_duration.format()
         self.min_duration = cfg.min_duration.format()
 
@@ -262,7 +273,8 @@ class ShCommand(object):
 
             log_info("Executing on %s : %s" % (host.addr, start_cmd))
             if not self.program.background:
-                t = host.exec_cmd(start_cmd, self.event, background=True, daemon=True,
+                t = host.exec_cmd(start_cmd, self.event,
+                                  background=True, daemon=True,
                                   stop_cmd = stop_cmd,
                                   min_duration = self.min_duration,
                                   max_duration = self.max_duration,
@@ -272,14 +284,16 @@ class ShCommand(object):
                 threads.append(t)
             else:
                 start_name = start_cmd.split()[0]
-                t = host.exec_cmd(start_cmd, self.event, background=True, daemon=True,
+                t = host.exec_cmd(start_cmd, self.event,
+                                  background=True, daemon=True,
                                   checked_rtn = self.program.checked_rtn, max_duration = self.max_duration,
                                   log_end = True)
                 threads.append(t)
 
                 sleep_stop_cmd = 'sleep {}; {}'.format(self.max_duration, stop_cmd)
                 stop_sleep_cmd = 'pkill sleep'
-                t = host.exec_cmd(sleep_stop_cmd, self.event, background=True, daemon=True,
+                t = host.exec_cmd(sleep_stop_cmd, self.event,
+                                  background=True, daemon=True,
                                   stop_cmd = stop_sleep_cmd,
                                   min_duration = self.max_duration,
                                   max_duration = self.max_duration + 1,
@@ -329,7 +343,7 @@ class ShRemote(object):
 
         self.files = []
         for cfg in self.cfg.get('files', {}).values():
-            self.files.append(ShFile(cfg, self.output_dir, label))
+            self.files.append(ShFile(cfg, self.output_dir))
 
         self.validate()
 
