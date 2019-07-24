@@ -1,13 +1,19 @@
 hosts:
-  host1:
-    addr: host1.abc.com
-  host2:
-    addr: host2.def.edu
+    host1:
+        addr: host1.abc.com
+    host2:
+        addr: host2.def.edu
 
 programs:
-  echo:
-    start: echo {to_echo}
-    hosts: host1
+    echo:
+        start: echo {to_echo}
+        hosts: host1
+
+files:
+    file_1:
+        src: '{0.cfg_dir}/file'
+        dst: '{out_dir}/file'
+        hosts: host2
 
 computed_a: $( 15 + 2 )
 
