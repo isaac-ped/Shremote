@@ -64,6 +64,7 @@ fields:
           type: map
           format: &host_fmt
                 type: map
+                flags: [list_ok]
                 fields:
                     - key: name
                       format:

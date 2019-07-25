@@ -38,6 +38,13 @@ class ShHost(object):
     RSYNC_TO_CMD = \
             'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{dst}" "{ssh.user}@{addr}:{src}"'
 
+    @classmethod
+    def create_host_list(cls, cfg_hosts):
+        hosts = []
+        for host in cfg_hosts:
+            hosts.extend([cls(h) for h in host])
+        return hosts
+
     def __init__(self, cfg):
         self.name = cfg.name.format()
         self.addr = cfg.addr.format()
@@ -81,7 +88,7 @@ class ShFile(object):
 
     def __init__(self, cfg, local_out):
         self.name = cfg.name.format()
-        self.hosts = [ShHost(h) for h in cfg.hosts]
+        self.hosts = ShHost.create_host_list(cfg.hosts)
         self.local_out = os.path.join(local_out, cfg.get_root().label.format())
         self.cfg_src = cfg.src
         self.cfg_dst = cfg.dst
@@ -214,7 +221,7 @@ class ShCommand(object):
         self.event = event
         self.begin = cfg.begin.format()
         self.program = ShProgram(cfg.program)
-        self.hosts = [ShHost(x) for x in cfg.hosts]
+        self.hosts = ShHost.create_host_list(cfg.hosts)
         self.max_duration = cfg.max_duration.format()
         self.min_duration = cfg.min_duration.format()
 
