@@ -27,6 +27,7 @@ class ShLocalCmd(object):
         self.event = event
 
     def execute(self):
+        log_info("Executing %s" % self.cmd)
         shell_call(self.cmd,
                    shell = True, stop_event = self.event,
                    checked_rtn = self.checked_rtn,
@@ -38,7 +39,7 @@ class ShHost(object):
             'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{ssh.user}@{addr}:{src}" "{dst}"'
 
     RSYNC_TO_CMD = \
-            'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{dst}" "{ssh.user}@{addr}:{src}"'
+            'rsync -av -e "ssh -p {ssh.port} -i {ssh.key}" "{src}" "{ssh.user}@{addr}:{dst}"'
 
     @classmethod
     def create_host_list(cls, cfg_hosts):
@@ -286,7 +287,7 @@ class ShCommand(object):
         for i, host in enumerate(self.hosts):
             host_log_entry = {}
             start_cmd = self.program.start_cmd(host, i)
-            stop_cmd = self.program.stop_cmd(i)
+            stop_cmd = self.program.stop_cmd(host, i)
 
             host_log_entry['addr_'] = host.addr
             host_log_entry['start_'] = start_cmd
@@ -481,6 +482,8 @@ class ShRemote(object):
             last_begin = cmd.begin
             cmd.start(self.event_log)
 
+            print("MAX DUR", cmd.max_duration)
+            print("MIN DUR", cmd.min_duration)
             max_end = max(max_end, cmd.begin + \
                                     max(cmd.max_duration if cmd.max_duration is not None else 0,
                                         cmd.min_duration if cmd.min_duration is not None else 0))

@@ -198,11 +198,11 @@ fields:
                             flags: [required]
                       - key: min_duration
                         format:
-                            type: [int, null]
+                            type: [float, null]
                         default: null
                       - key: max_duration
                         format:
-                            type: [int, null]
+                            type: [float, null]
                         default: null
                 computed_fields:
                     - key: remote_output

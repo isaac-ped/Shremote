@@ -373,6 +373,10 @@ class FmtConfig(object):
         if not self.__formattable:
             return self.get_raw()
 
+        if not self.__leaf and self.__types is not None:
+            raise Exception("Could not cast {} ({}) to appropriate type! It is not a leaf node"
+                            .format(self.__name, self.__raw))
+
         if not self.__leaf:
             return self.get_raw()
 
@@ -423,8 +427,7 @@ class FmtConfig(object):
                         casted = True
                         break
                     except ValueError as e:
-                        raise
-                        pass
+                        continue
                 if not casted:
                     raise CfgFormatException("Could not cast {} to {} for {}"
                             .format(evaled, self.__types, self.__name))
