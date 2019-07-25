@@ -40,6 +40,7 @@ class FmtConfig(object):
             self.__root = root
 
         self.__is_computed = computed
+        self.__list_ok = False
 
         self.__formattable = formattable
         self.__formattable_root = None
@@ -63,6 +64,9 @@ class FmtConfig(object):
 
     def get_root(self):
         return self.__root
+
+    def set_list_ok(self):
+        self.__list_ok = True
 
     def set_formattable(self):
         if not self.is_map():
@@ -209,7 +213,7 @@ class FmtConfig(object):
 
     def _assert_has_attrs(self, key):
         self._assert_not_leaf(key)
-        if self.is_list():
+        if self.is_list() and not self.__list_ok:
             raise AttributeError("Config entry '%s' does not have '%s': it is a list" %
                                 (self.__name, key))
 
@@ -267,6 +271,13 @@ class FmtConfig(object):
                         "Config entry '{}' requested unprovided computed subfield: '{}'"
                         .format(self.__name, key))
             return rtn
+        except TypeError:
+            if self.__list_ok:
+                try:
+                    return self.__subfields[0][key]
+                except:
+                    pass
+            raise
         except KeyError:
             raise KeyError("Config entry '{}' does not contain key '{}'".format(
                             self.__name, key))
