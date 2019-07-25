@@ -11,7 +11,7 @@ class TestSampleCfgs(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        shutil.rmtree(cls.TEST_OUTPUT_DIR)
+        shutil.rmtree(cls.TEST_OUTPUT_DIR, ignore_errors=True)
 
     def test_all_sample_cfgs(self):
         cfgs = [
