@@ -22,13 +22,15 @@ class ShException(Exception):
 class ShLocalCmd(object):
 
     def __init__(self, cfg, event=None):
-        self.cmd = self.cfg.cmd.format().replace('\n', ' ')
-        self.checked_rtn = self.cfg.checked_rtn.format()
+        self.cmd = cfg.cmd.format().replace('\n', ' ')
+        self.checked_rtn = cfg.checked_rtn.format()
         self.event = event
 
     def execute(self):
-        shell_call(self.cmd, shell = True, stop_event = self.event,
-                   checked_rtn = self.checked_rtn)
+        shell_call(self.cmd,
+                   shell = True, stop_event = self.event,
+                   checked_rtn = self.checked_rtn,
+                   )
 
 class ShHost(object):
 
@@ -96,21 +98,21 @@ class ShFile(object):
     def validate(self):
         for host in self.hosts:
             try:
-                self.cfg_src.format(out_dir = self.local_out, host = host.cfg)
+                self.cfg_src.format(host = host.cfg)
             except (KeyError, CfgFormatException) as e:
                 log_error("Error formatting source of file {}: {}".format(self.name, e))
                 raise
 
             try:
-                self.cfg_dst.format(out_dir = host.log_dir, host = host.cfg)
+                self.cfg_dst.format(remote_output = host.log_dir, host = host.cfg)
             except (KeyError, CfgFormatException) as e:
                 log_error("Error formatting dest of file {}: {}".format(self.name, e))
                 raise
 
     def copy_to_host(self):
         for host in self.hosts:
-            src = self.cfg_src.format(out_dir = self.local_out, host = host.cfg)
-            dst = self.cfg_dst.format(out_dir = host.log_dir, host = host.cfg)
+            src = self.cfg_src.format(host = host.cfg)
+            dst = self.cfg_dst.format(remote_out = host.log_dir, host = host.cfg)
             host.copy_to(src, dst, background=False)
 
 class ShLog(object):
@@ -205,12 +207,14 @@ class ShProgram(object):
         log_dir = self.log.log_dir(host, host_idx)
         return self.start.format(host_idx = host_idx,
                                  log_dir = log_dir,
+                                 remote_output = host.log_dir,
                                  host = host.cfg) +\
                 self.log.suffix(host, host_idx)
 
-    def stop_cmd(self, host_idx):
+    def stop_cmd(self, host, host_idx):
         if self.stop is not None:
-            return self.stop.format(host_idx = host_idx)
+            return self.stop.format(host_idx = host_idx,
+                                    remote_output = host.log_dir)
         else:
             return None
 
@@ -263,15 +267,10 @@ class ShCommand(object):
                 raise
 
         try:
-            stop_cmd = self.program.stop_cmd(0)
+            stop_cmd = self.program.stop_cmd(self.hosts[0], 0)
         except KeyError as e:
             log_error("Error validating command %s: %s" % (self.program.stop.get_raw(), e))
             raise
-
-        if (stop_cmd is None) != (self.max_duration is None):
-            log_error("If one of stop_cmd and max_duration is specified, "
-                      "the other should be as well: {}".format(start_cmd))
-            raise Exception("Cannot specify one of stop_cmd and max_duration")
 
         if self.program.background and self.max_duration is not None and stop_cmd is None:
             log_error("Must specify stop_cmd if program is backgrounded "
@@ -352,6 +351,7 @@ class ShRemote(object):
         self.cfg.label = label
         self.cfg.user = os.getenv('USER')
         self.cfg.cfg_dir = os.path.dirname(cfg_file)
+        self.cfg.local_output = self.output_dir
         log("Assuming user is : %s" % self.cfg.user)
 
         self.label = label
