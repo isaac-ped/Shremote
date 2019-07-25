@@ -13,6 +13,9 @@ computed_fields:
     - key: cfg_dir
       format:
           type: str
+    - key: local_output
+      format:
+          type: str
 
 fields:
     - key: log_dir
@@ -54,7 +57,10 @@ fields:
                       format:
                           type: [int, null]
                       default: null
-
+                computed_fields:
+                    - key: remote_output
+                      format:
+                        type: str
 
     - key: post_cmds
       format: *CMD_FORMAT
@@ -109,7 +115,7 @@ fields:
                             referent: [hosts]
                             flags: [list_ok, required]
           computed_fields:
-              - key: out_dir
+              - key: remote_output
                 format:
                     type: str
 
@@ -199,6 +205,9 @@ fields:
                             type: [int, null]
                         default: null
                 computed_fields:
+                    - key: remote_output
+                      format:
+                          type: str
                     - key: host_idx
                       format:
                           type: int
