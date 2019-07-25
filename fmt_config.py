@@ -204,8 +204,8 @@ class FmtConfig(object):
 
     def _assert_not_leaf(self, key):
         if self.__leaf:
-            raise AttributeError("Config entry '%s' does not have '%s': it is a leaf" %
-                                 (self.__name, key))
+            raise AttributeError("Config entry '%s' does not have '%s': it is a leaf (%s)" %
+                                 (self.__name, key, self.__raw))
 
     def _assert_has_attrs(self, key):
         self._assert_not_leaf(key)
