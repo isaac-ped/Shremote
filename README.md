@@ -279,7 +279,7 @@ Specifies programs to be executed on remote hosts.
     * err: (optional) A file to which stderr should be logged
 * **Computed fields**: See `commands.computed_fields` below
 
-##### commands:
+##### commands
 Specifies when and where to execute commands
 
 * **Format**: List of maps
@@ -293,3 +293,11 @@ Specifies when and where to execute commands
   * host_idx: If executing on multiple hosts, the index of the currently-executing host
   * log_dir: The full path to the log directory for this program, including `<program>.log.dir`. To be used if additional logs are to be produced
   * host: If executing on multiple hosts, the config map of the host on which the command is executed
+
+##### Root-level computed fields
+These fields are available with `{0.<field>}` throughout the config
+
+* user: The user currently executing the config
+* label: The label provided on starting Shremote
+* cfg_dir: The directory in which the config file resides
+* args: A map of the key-value argument provided in the `--args` argument at startup
