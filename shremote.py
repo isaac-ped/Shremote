@@ -6,6 +6,8 @@ from cfg_loader import load_cfg_file, CfgFormatException
 from include_loader import IncludeLoader
 from logger import * # log*(), set_logfile(), close_logfile()
 
+from shremote_old import main as old_main
+
 import threading # For threading.Event
 import argparse
 import pprint
@@ -497,7 +499,7 @@ class ShRemote(object):
         close_logfile()
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description="Schedule remote commands over SSH")
     parser.add_argument('cfg_file', type=str, help='.yml cfg file')
     parser.add_argument('label', type=str, help='Label for resulting logs')
@@ -505,6 +507,8 @@ if __name__ == '__main__':
     parser.add_argument('--get-only', action='store_true', help='Only get log files, do not run')
     parser.add_argument('--out', type=str, default='.', help="Directory to output files into")
     parser.add_argument('--delete-remote', action='store_true', help='Deletes remote log directories')
+    parser.add_argument('--v1-fallback', action='store_true',
+            help='Fall back to old shremote version if this one fails')
     parser.add_argument('--args', type=str, required=False,
                         help="Additional arguments which are passed to the config file (format 'k1:v1;k2:v2')")
 
@@ -516,7 +520,15 @@ if __name__ == '__main__':
             k, v = entry.split(":")
             sh_args[k] = v
 
-    shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args)
+    try:
+        shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args)
+    except CfgFormatException as e:
+        if not args.v1_fallback:
+            log_warn("Execution failed. Try running with --v1-fallback to attempt older version")
+            raise
+        else:
+            log_warn("Encountered exception:\n\t{}\nFalling back to old shremote version".format(e))
+            return old_main()
 
     if args.parse_test:
         exit(0)
@@ -526,3 +538,7 @@ if __name__ == '__main__':
         if args.delete_remote:
             shremote.delete_remote_logs()
         shremote.run()
+
+
+if __name__ == '__main__':
+    main()
