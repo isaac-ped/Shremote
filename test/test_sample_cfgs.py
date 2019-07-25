@@ -19,7 +19,8 @@ class TestSampleCfgs(unittest.TestCase):
             'default_args_test.yml',
             'test_computed_fields.yml',
             'test_escaped_computation.yml',
-            'test_escaped_reference.yml'
+            'test_escaped_reference.yml',
+            'multi_host_cfg.yml'
         ]
 
         for cfg in cfgs:
