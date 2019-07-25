@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-from checked_process import shell_call, start_shell_call, start_ssh_call
+from checked_process import shell_call, start_shell_call, ssh_call, start_ssh_call
 from cfg_loader import load_cfg_file, CfgFormatException
 from include_loader import IncludeLoader
 from logger import * # log*(), set_logfile(), close_logfile()
@@ -112,7 +112,7 @@ class ShFile(object):
     def copy_to_host(self):
         for host in self.hosts:
             src = self.cfg_src.format(host = host.cfg)
-            dst = self.cfg_dst.format(remote_out = host.log_dir, host = host.cfg)
+            dst = self.cfg_dst.format(remote_output = host.log_dir, host = host.cfg)
             host.copy_to(src, dst, background=False)
 
 class ShLog(object):
