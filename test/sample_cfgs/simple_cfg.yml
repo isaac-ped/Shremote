@@ -7,7 +7,8 @@ hosts:
 programs:
     echo:
         start: echo {to_echo}
-        hosts: host1
+        hosts:
+            addr: host5.net
 
 files:
     file_1:
@@ -27,7 +28,6 @@ commands:
       begin: 0
 
     - program: echo
-      hosts: host1
       to_echo: '{host_idx}'
       stuff: things
       begin: '{0.computed_b}'

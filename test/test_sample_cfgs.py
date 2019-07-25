@@ -23,13 +23,14 @@ class TestSampleCfgs(unittest.TestCase):
         ]
 
         for cfg in cfgs:
+            print("Testing cfg %s\n" % cfg)
             ShRemote(os.path.join('sample_cfgs', cfg), 'cfg_test', self.TEST_OUTPUT_DIR, {})
 
     def test_default_args(self):
         cfg = load_cfg_file("sample_cfgs/default_args_test.yml")
-        start1 = cfg.commands[0].to_echo.format(host=cfg.commands[0].hosts[0])
+        start1 = cfg.commands[0].to_echo.format(host=cfg.commands[0].hosts[0][0])
         self.assertEqual(start1, "Hello world!", "Default was not applied")
-        start2 = cfg.commands[1].to_echo.format(host=cfg.commands[1].hosts[0])
+        start2 = cfg.commands[1].to_echo.format(host=cfg.commands[1].hosts[0][0])
         self.assertEqual(start2, "Goodbye local", "Default was not overridden,  instead: %s" % start2)
 
     def test_computed_fields(self):
