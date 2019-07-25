@@ -10,6 +10,7 @@ class TestCfgLoader(unittest.TestCase):
     DURATION_CMD = 'for i in `seq 1 {}`; do echo $i; sleep .1; done'
     FOREVER_CMD = ['sleep', '100']
     KILL_FOREVER_CMD = 'pkill sleep'
+    SLACK=1.0
 
     def dur_cmd(self, time):
         return self.DURATION_CMD.format(time)
@@ -19,7 +20,7 @@ class TestCfgLoader(unittest.TestCase):
         fn()
         dur = time.time() - start
 
-        self.assertTrue(dur < max_time, "Fn ran for too long: {} < {}".format(dur, max_time))
+        self.assertTrue(dur < max_time + self.SLACK, "Fn ran for too long: {} < {}".format(dur, max_time))
 
     def test_simple_shell_execute(self):
         self.check_duration(.4,
@@ -34,15 +35,16 @@ class TestCfgLoader(unittest.TestCase):
         )
 
     def test_max_duration_no_stop_cmd(self):
+        print("Checking no stop cmd")
         self.check_duration(.5,
                 lambda: shell_call(self.FOREVER_CMD,
-                       max_duration = .25, log_end = True)
+                       max_duration = .25, log_end = True, check_interval=.05)
         )
 
     def test_max_duration_not_exceeded(self):
         self.check_duration(.3,
                 lambda: shell_call(self.dur_cmd(2), shell=True, log_end=True,
-                       max_duration=.25, duration_exceeded_error=True)
+                       max_duration=.25, duration_exceeded_error=True, check_interval=.05)
         )
 
     def test_max_duration_exceeded_and_thrown(self):
