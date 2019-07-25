@@ -1,8 +1,29 @@
 import unittest
 import test_files
+import os
+import shutil
 from cfg_loader import load_cfg_file
+from shremote import ShRemote
 
 class TestSampleCfgs(unittest.TestCase):
+
+    TEST_OUTPUT_DIR='test_output'
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.TEST_OUTPUT_DIR)
+
+    def test_all_sample_cfgs(self):
+        cfgs = [
+            'simple_cfg.yml',
+            'default_args_test.yml',
+            'test_computed_fields.yml',
+            'test_escaped_computation.yml',
+            'test_escaped_reference.yml'
+        ]
+
+        for cfg in cfgs:
+            ShRemote(os.path.join('sample_cfgs', cfg), 'cfg_test', self.TEST_OUTPUT_DIR, {})
 
     def test_default_args(self):
         cfg = load_cfg_file("sample_cfgs/default_args_test.yml")
