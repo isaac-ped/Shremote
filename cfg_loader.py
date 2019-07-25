@@ -409,6 +409,6 @@ if __name__ == '__main__':
 
     for cmd in cfg.commands:
         print(cmd.pformat())
-        start = cmd.program.start.format(host_idx=0, host=cmd.hosts[0][0])
+        start = cmd.program.start.format(host_idx=0, host=cmd.hosts[0][0], remote_output="path/to/output", log_dir='/path/to/log/dir')
         begin = cmd.begin.format()
         print("Command '{}'\n\tstarts at time {}".format(start, begin))
