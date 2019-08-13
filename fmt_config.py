@@ -145,7 +145,8 @@ class FmtConfig(object):
                 for k, v in self.__subfields.items():
                     raw[k] = v
             elif isinstance(self.__subfields, dict):
-                raw = {k: v.get_raw() for k, v in self.__subfields.items()}
+                raw = {k: v.get_raw() for k, v in self.__subfields.items() \
+                        if self.__default_computed_subfields_enabled or not v.is_computed()}
             elif isinstance(self.__subfields, list):
                 raw = [v.get_raw() for v in self.__subfields]
             return raw
@@ -159,6 +160,12 @@ class FmtConfig(object):
             if path[0] not in self:
                 self[path[0]] = FmtConfig({}, self.__path + [path[0]], self.__root, self.__formattable, is_computed or self.__is_computed)
             self[path[0]].setpath(path[1:], value, is_computed or self.__is_computed)
+
+    def merge(self, value):
+        value = FmtConfig(value, self.__path, self.__root)
+        for k, v in value.items():
+            if k not in self:
+                self[k] = v
 
     def mergepath(self, path, value):
         if len(path) == 0:
