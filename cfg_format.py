@@ -12,13 +12,14 @@ def NullType(x):
 class CfgField(object):
 
     NoDefault = object()
-    _cfg_instance = None
+    _cfg_instance = defaultdict(lambda: None)
 
     def __init__(self, key, types=None,
                  default = NoDefault, required = False,
-                 list_ok = False, aliases = None, inherit=None):
+                 list_ok = False, aliases = None, inherit=None,
+                 sibling_inherit=None):
         self.key = key
-        if not isinstance(types, list):
+        if types is not None and not isinstance(types, list):
             self.types = [types]
         else:
             self.types = types
@@ -29,16 +30,17 @@ class CfgField(object):
         else:
             self.aliases = aliases
         self.inherit = inherit
+        self.sibling_inherit = sibling_inherit
         self.list_ok = list_ok
         self.pre_formatted = set()
 
     @classmethod
     def set_cfg(cls, cfg):
-        cls._cfg_instance = cfg
+        cls._cfg_instance[cls] = cfg
 
     @classmethod
     def cfg(cls):
-        return cls._cfg_instance
+        return cls._cfg_instance[cls]
 
     def _check_required(self, parent_cfg):
         if not self.key in parent_cfg  and self.required:
@@ -58,12 +60,30 @@ class CfgField(object):
         if self.key not in parent_cfg and self.default != self.NoDefault:
             parent_cfg[self.key] = self.default
 
-    def _do_inherit(self, parent_cfg):
+    def _do_inherit(self, parent_cfg, direct_inherit = None):
         if self.inherit is not None and self.inherit.cfg() is not None:
             if not self.list_ok:
                 parent_cfg.mergepath([self.key], self.inherit.cfg())
             elif self.key not in parent_cfg:
                 parent_cfg[self.key] = self.inherit.cfg()
+        if self.sibling_inherit is not None:
+            child = parent_cfg
+            for key in self.sibling_inherit:
+                if key in child:
+                    child = child[key]
+                else:
+                    return
+            if not self.list_ok:
+                parent_cfg.mergepath([self.key], child)
+            else:
+                parent_cfg[self.key] = child
+        if direct_inherit is not None:
+            if not self.list_ok:
+                parent_cfg.mergepath([self.key], direct_inherit)
+            else:
+                parent_cfg[self.key] = direct_inherit
+
+
 
     def _set_types(self, cfg):
         if self.types is not None:
@@ -93,20 +113,13 @@ class CfgField(object):
             self._format(cfg)
 
     def _format(self, cfg):
-        self.set_cfg(cfg)
         self._set_types(cfg)
         return cfg
 
 class CfgMap(CfgField):
     _fields = []
     _computed_fields = []
-
-    @classmethod
-    def get_field(cls, key):
-        for field in cls._fields:
-            if field.key == key:
-                return field
-        raise CfgMetaFormatException("Key {} does not exist in {}".format(key, cls))
+    _child_inherit = None
 
     def __init__(self, key, format_root=False, *args, **kwargs):
         super(CfgMap, self).__init__(key, None, *args, **kwargs)
@@ -137,12 +150,16 @@ class CfgMap(CfgField):
                 field.format(subfield)
 
         for field in self._computed_fields:
-            field.default = field.types[0]()
+            if field.types is not None:
+                field.default = field.types[0]()
             field.pre_format(cfg)
             cfg[field.key].set_computed()
 
         if self.format_root:
             cfg.set_formattable()
+
+        if self._child_inherit:
+            cfg.merge(cfg.getpath(self._child_inherit))
 
 class CfgMapList(CfgMap):
 
@@ -151,6 +168,7 @@ class CfgMapList(CfgMap):
             return False
         for subcfg in parent_cfg[self.key]:
             self.pre_format_children(subcfg)
+            self._do_inherit(subcfg)
 
     def _format(self, cfg):
         for cfg_item in cfg:
@@ -162,11 +180,14 @@ class CfgMapMap(CfgMap):
         references = {}
 
     def refer(self, key):
+        if self.cfg() is None:
+            raise CfgMetaFormatException("Referred to " + self.key + " when not defined")
         return self.cfg()[key]
 
     def pre_format(self, parent_cfg):
         if self.key not in parent_cfg:
             return False
+        self.set_cfg(parent_cfg[self.key])
         for subcfg in parent_cfg[self.key].values():
             self.pre_format_children(subcfg)
 
@@ -174,7 +195,6 @@ class CfgMapMap(CfgMap):
         super(CfgMapMap, self)._format(value)
 
     def _format(self, cfg):
-        self.set_cfg(cfg)
         for key, value in cfg.items():
             if 'name' not in value:
                 value.name = key
@@ -185,21 +205,34 @@ class CfgReference(CfgMap):
         super(CfgReference, self).__init__(key, *args, **kwargs)
         self.referent = Referent(key, *args, **kwargs)
 
-    def get_field(self, key):
-        return self.referent.get_field(key)
-
     def pre_format(self, parent_cfg):
         if self.key not in parent_cfg:
             self._do_inherit(parent_cfg)
-        return super(CfgReference, self).pre_format(parent_cfg)
+        if self.key in parent_cfg:
+            cfg = parent_cfg[self.key]
+            if not (self.list_ok and cfg.is_list()):
+                cfgs = [parent_cfg[self.key]]
+            else:
+                cfgs = parent_cfg[self.key]
+
+            for cfg in cfgs:
+                if cfg.is_leaf():
+                    ref = cfg.format()
+                    cfg.set_value(self.referent.refer(ref))
+                    cfg['name'] = ref
+                elif 'name' not in cfg:
+                    cfg['name'] = '_anonymous'
+
+        if super(CfgReference, self).pre_format(parent_cfg):
+            if self.list_ok:
+                for elem in parent_cfg[self.key]:
+                    self.referent.pre_format_children(elem)
+            else:
+                self.referent.pre_format_children(parent_cfg[self.key])
+            return True
+        return False
 
     def _format(self, cfg):
-        self.set_cfg(cfg)
-        if cfg.is_leaf():
-            cfg.set_value(self.referent.refer(cfg.format()))
-        elif 'name' not in cfg:
-            cfg['name'] = '_anonymous'
-
         self.referent.format_value(cfg)
 
 
@@ -254,15 +287,14 @@ class ProgramsCfg(CfgMapMap):
             CfgField('duration_reduced_error', bool, default=True),
             CfgField('duration_exceeded_error', bool, default=False),
             CfgField('bg', bool, default=False),
-            CfgMap('defaults')
+            CfgField('defaults', dict, default=dict())
     ]
 
 class CommandsCfg(CfgMapList):
-    Program = CfgReference('program', ProgramsCfg, required=True)
 
     _fields = [
-            Program,
-            CfgReference('hosts', HostsCfg, inherit=Program.get_field('hosts'), list_ok = True),
+            CfgReference('program', ProgramsCfg, required=True),
+            CfgReference('hosts', HostsCfg, sibling_inherit=['program', 'hosts'], list_ok = True),
             CfgField('begin', float, required=True),
             CfgField('min_duration', [float, NullType], default=None),
             CfgField('max_duration', [float, NullType], default=None),
@@ -273,6 +305,8 @@ class CommandsCfg(CfgMapList):
             CfgField('log_dir', str),
             CfgField('host', lambda : defaultdict(str)),
     ]
+
+    _child_inherit = ['program', 'defaults']
 
 class CfgFmt(CfgMap):
     _fields = [
