@@ -65,6 +65,9 @@ class FmtConfig(object):
     def get_root(self):
         return self.__root
 
+    def set_list_ok(self):
+        self.__list_ok = True
+
     def set_formattable(self):
         if not self.is_map():
             raise CfgFormatException("Only map-based containers can be set to formattable")
@@ -217,12 +220,12 @@ class FmtConfig(object):
 
     def _assert_not_leaf(self, key):
         if self.__leaf:
-            raise AttributeError("Config entry '%s' does not have '%s': it is a leaf" %
-                                 (self.__name, key))
+            raise AttributeError("Config entry '%s' does not have '%s': it is a leaf (%s)" %
+                                 (self.__name, key, self.__raw))
 
     def _assert_has_attrs(self, key):
         self._assert_not_leaf(key)
-        if self.is_list():
+        if self.is_list() and not self.__list_ok:
             raise AttributeError("Config entry '%s' does not have '%s': it is a list" %
                                 (self.__name, key))
 
@@ -280,6 +283,13 @@ class FmtConfig(object):
                         "Config entry '{}' requested unprovided computed subfield: '{}'"
                         .format(self.__name, key))
             return rtn
+        except TypeError:
+            if self.__list_ok:
+                try:
+                    return self.__subfields[0][key]
+                except:
+                    pass
+            raise
         except KeyError:
             raise KeyError("Config entry '{}' does not contain key '{}'".format(
                             self.__name, key))
@@ -375,6 +385,10 @@ class FmtConfig(object):
         if not self.__formattable:
             return self.get_raw()
 
+        if not self.__leaf and self.__types is not None:
+            raise Exception("Could not cast {} ({}) to appropriate type! It is not a leaf node"
+                            .format(self.__name, self.__raw))
+
         if not self.__leaf:
             return self.get_raw()
 
@@ -425,8 +439,7 @@ class FmtConfig(object):
                         casted = True
                         break
                     except ValueError as e:
-                        raise
-                        pass
+                        continue
                 if not casted:
                     raise CfgFormatException("Could not cast {} to {} for {}"
                             .format(evaled, self.__types, self.__name))

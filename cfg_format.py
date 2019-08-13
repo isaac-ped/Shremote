@@ -250,12 +250,11 @@ class SshCfg(CfgMap):
 class CmdsCfg(CfgMapList):
     _fields = [
             CfgField('cmd', str, required=True),
-            CfgField('checked_rtn', [int, NullType], None, aliases=('check_rtn'))
     ]
 
 class HostsCfg(CfgMapMap):
     _fields = [
-            CfgField('hostname', str, required=True, aliases=('addr')),
+            CfgField('hostname', str, required=True, aliases=('addr'), list_ok=True),
             CfgMap('ssh', inherit=SshCfg),
             CfgField('log_dir', inherit=LogDirCfg)
     ]
@@ -274,7 +273,7 @@ class ProgramLogCfg(CfgMap):
     _fields = [
             CfgField('dir', str, default=''),
             CfgField('out', str),
-            CfgField('err', str)
+            CfgField('err', str),
     ]
 
 
@@ -287,6 +286,7 @@ class ProgramsCfg(CfgMapMap):
             CfgField('duration_reduced_error', bool, default=True),
             CfgField('duration_exceeded_error', bool, default=False),
             CfgField('bg', bool, default=False),
+            CfgField('checked_rtn', [int, bool], default=False, aliases=('check_rtn')),
             CfgField('defaults', dict, default=dict())
     ]
 

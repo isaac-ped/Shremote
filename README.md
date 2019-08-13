@@ -161,8 +161,8 @@ which must have been provided by the user from the command line, such as:
 * `{host.addr}` (within a command or program)
 will be substituted for the address of the host on which
 the currently executing command is running.
-* `{out_dir}` (within a `file`) will be substituted for the directory
-into which logs are placed
+* `{remote_output}` will be substituted for the directory
+into which logs are placed on a remote host
 
 #### Evaluation
 Strings, or portions of strings, placed within `$(...)` will be run through
@@ -257,7 +257,7 @@ Specifies files to be copied from the local host to remote hosts
   * dst: The destination of the file on the remote host
   * hosts: Host(s) (or references to host(s)) onto which the file should be copied
 * **Computed fields**:
-  * out_dir: The local or remote log directory, depending on if it is used in `src` or `dst`
+  * remote_out: The remote log directory
 * **Referenced by**: `commands.<command>.program`
 
 ##### programs

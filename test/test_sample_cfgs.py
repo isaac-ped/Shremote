@@ -11,7 +11,7 @@ class TestSampleCfgs(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        shutil.rmtree(cls.TEST_OUTPUT_DIR)
+        shutil.rmtree(cls.TEST_OUTPUT_DIR, ignore_errors=True)
 
     def test_all_sample_cfgs(self):
         cfgs = [
@@ -19,10 +19,12 @@ class TestSampleCfgs(unittest.TestCase):
             'default_args_test.yml',
             'test_computed_fields.yml',
             'test_escaped_computation.yml',
-            'test_escaped_reference.yml'
+            'test_escaped_reference.yml',
+            'multi_host_cfg.yml'
         ]
 
         for cfg in cfgs:
+            print("Testing cfg %s\n" % cfg)
             ShRemote(os.path.join('sample_cfgs', cfg), 'cfg_test', self.TEST_OUTPUT_DIR, {})
 
     def test_default_args(self):
