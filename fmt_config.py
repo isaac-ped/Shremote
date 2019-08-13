@@ -19,7 +19,19 @@ class FmtConfig(object):
             raise CfgFormatException("Root is not none and path DNE".format(path))
         self.__name = ".".join(str(p) for p in path)
         self.__path = path
+        self.__is_computed = computed
+        self.__formattable = formattable
+        self.__formattable_root = None
+        self.__default_computed_subfields_enabled = False
+        self.__types = None
+        if root is None:
+            self.__root = self
+        else:
+            self.__root = root
 
+        self.set_value(raw_entry)
+
+    def set_value(self, raw_entry):
         if isinstance(raw_entry, FmtConfig):
             if raw_entry.is_map():
                 computed_mask = {k: v.is_computed() for k, v in raw_entry.items()}
@@ -30,33 +42,22 @@ class FmtConfig(object):
                 computed = raw_entry.is_computed()
             raw_entry = raw_entry.get_raw()
         else:
-            computed_mask = defaultdict(lambda: computed)
+            computed_mask = defaultdict(lambda: False)
 
         self.__raw = raw_entry
-        self.__types = None
-        if root is None:
-            self.__root = self
-        else:
-            self.__root = root
 
-        self.__is_computed = computed
-
-        self.__formattable = formattable
-        self.__formattable_root = None
-
-        self.__default_computed_subfields_enabled = False
         if isinstance(raw_entry, dict):
             if isinstance(raw_entry, defaultdict):
-                self.__subfields = defaultdict(lambda : FmtConfig( raw_entry.default_factory(), path + ['?'], self.__root, self.__formattable, True))
+                self.__subfields = defaultdict(lambda : FmtConfig( raw_entry.default_factory(), self.__path + ['?'], self.__root, self.__formattable, True))
             else:
                 self.__subfields = {}
                 for k, v in raw_entry.items():
-                    self.__subfields[k] = FmtConfig(v, path + [k], self.__root, self.__formattable, computed_mask[k])
+                    self.__subfields[k] = FmtConfig(v, self.__path + [k], self.__root, self.__formattable, computed_mask[k])
             self.__leaf = False
         elif isinstance(raw_entry, list):
             self.__subfields = []
             for i, v in enumerate(raw_entry):
-                self.__subfields.append(FmtConfig(v, path + [i], self.__root, self.__formattable, computed_mask[i]))
+                self.__subfields.append(FmtConfig(v, self.__path + [i], self.__root, self.__formattable, computed_mask[i]))
             self.__leaf = False
         else:
             self.__leaf = True
@@ -83,6 +84,11 @@ class FmtConfig(object):
             FmtConfig.__format_kwargs = FmtConfig({}, self.__path, self.__root, self.__formattable, True)
         for k, v in kwargs.items():
             FmtConfig.__format_kwargs[k] = v
+
+    def set_computed(self):
+        self.__is_computed = True
+        for child in self.children():
+            child.set_computed()
 
     def is_computed(self):
         return self.__is_computed
