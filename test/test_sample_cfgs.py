@@ -2,7 +2,7 @@ import unittest
 import test_files
 import os
 import shutil
-from cfg_loader import load_cfg_file
+from cfg_format import load_cfg as load_cfg_file
 from shremote import ShRemote
 
 class TestSampleCfgs(unittest.TestCase):
