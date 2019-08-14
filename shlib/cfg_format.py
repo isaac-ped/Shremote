@@ -2,6 +2,7 @@ import yaml
 from collections import defaultdict
 from cfg_formatter import CfgField, CfgMap, CfgMapList, CfgMapMap, CfgReference, NullType, TopLvlCfg
 from fmt_config import FmtConfig
+from include_loader import IncludeLoader
 
 class LogDirCfg(CfgField):
     def __init__(self, key, *args, **kwargs):
@@ -17,6 +18,7 @@ class SshCfg(CfgMap):
 class CmdsCfg(CfgMapList):
     _fields = [
             CfgField('cmd', str, required=True),
+            CfgField('checked_rtn', [int, bool], default=0, aliases=('check_rtn')),
     ]
 
 class HostsCfg(CfgMapMap):
@@ -30,7 +32,7 @@ class FilesCfg(CfgMapMap):
     _fields = [
             CfgField('src', str, required=True),
             CfgField('dst', str, required=True),
-            CfgReference('hosts', HostsCfg, list_ok = True, required=True)
+            CfgReference('hosts', HostsCfg, list_ok = True, required=True, aliases=('host'))
     ]
     _computed_fields = [
             CfgField('out_dir', str)
@@ -46,9 +48,10 @@ class ProgramLogCfg(CfgMap):
 
 class ProgramsCfg(CfgMapMap):
     _fields = [
-            CfgReference('hosts', HostsCfg, list_ok = True),
+            CfgReference('hosts', HostsCfg, list_ok = True, aliases=('host')),
             CfgField('start', str, required=True),
             CfgField('stop', str, default=None),
+            # TODO: Add 'kill' field
             ProgramLogCfg('log'),
             CfgField('duration_reduced_error', bool, default=True),
             CfgField('duration_exceeded_error', bool, default=False),
@@ -97,7 +100,7 @@ class CfgFmt(TopLvlCfg):
 def load_cfg(cfg, fmt = CfgFmt()):
     if isinstance(cfg, str):
         with open(cfg, 'r') as f:
-            cfg = yaml.load(f)
+            cfg = yaml.load(f, Loader=IncludeLoader)
     cfg = FmtConfig(cfg)
     fmt.format(cfg)
     return cfg
