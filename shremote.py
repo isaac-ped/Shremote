@@ -43,7 +43,6 @@ class ShHost(object):
 
     @classmethod
     def create_host_list(cls, cfg_hosts):
-        print(cfg_hosts.pformat())
         hosts = [cls(h) for h in cfg_hosts]
         return hosts
 
