@@ -2,7 +2,7 @@ import unittest
 import os
 import time
 import test_files ## Adds path to import checked_process
-from checked_process import shell_call, start_shell_call, CheckedProcessException
+from shlib.checked_process import shell_call, start_shell_call, CheckedProcessException
 import threading
 
 class TestCfgLoader(unittest.TestCase):

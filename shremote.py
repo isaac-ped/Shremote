@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-from checked_process import shell_call, start_shell_call, ssh_call, start_ssh_call
-from cfg_format import load_cfg
-from include_loader import IncludeLoader
-from logger import * # log*(), set_logfile(), close_logfile()
+from shlib.checked_process import shell_call, start_shell_call, ssh_call, start_ssh_call
+from shlib.cfg_format import load_cfg
+from shlib.include_loader import IncludeLoader
+from shlib.logger import * # log*(), set_logfile(), close_logfile()
 
 from shremote_old import main as old_main
 
