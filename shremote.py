@@ -577,6 +577,8 @@ class Command:
                         "{}: Specified enforce_duration=True with no duration specified".format(program_name)
                     )
                 self.enforced_duration = self.duration - 1
+            elif enforce_duration == False:
+                self.enforced_duration = None
             elif isinstance(enforce_duration, (int, float)) and enforce_duration > 0:
                 self.enforced_duration = enforce_duration
             else:
