@@ -174,6 +174,7 @@ class CfgMapList(CfgMap):
             super(CfgMapList, self)._format(cfg_item)
 
 class CfgMapMap(CfgMap):
+
     def __init__(self, key, *args, **kwargs):
         super(CfgMapMap, self).__init__(key, *args, **kwargs)
         references = {}
@@ -187,7 +188,9 @@ class CfgMapMap(CfgMap):
         if self.key not in parent_cfg:
             return False
         self.set_cfg(parent_cfg[self.key])
-        for subcfg in parent_cfg[self.key].values():
+        for subkey, subcfg in parent_cfg[self.key].items():
+            if '_name' not in subcfg:
+                subcfg._name = subkey
             self.pre_format_children(subcfg)
 
     def format_value(self, value):
@@ -195,9 +198,16 @@ class CfgMapMap(CfgMap):
 
     def _format(self, cfg):
         for key, value in cfg.items():
-            if 'name' not in value:
-                value.name = key
+            if not isinstance(value, FmtConfig):
+                raise Exception(cfg.get_name(), "does not contain a mapping")
+            if '_name' not in value:
+                value._name = key
             self.format_value(value)
+
+            if self.format_root:
+                print("Setting %s formattable" % value.get_name())
+                value.set_formattable()
+
 
 class CfgReference(CfgMap):
     def __init__(self, key, Referent, *args, **kwargs):
@@ -205,6 +215,7 @@ class CfgReference(CfgMap):
         self.referent = Referent(key, *args, **kwargs)
 
     def pre_format(self, parent_cfg):
+        self._check_aliases(parent_cfg)
         if self.key not in parent_cfg:
             self._do_inherit(parent_cfg)
         if self.key in parent_cfg:
@@ -218,9 +229,9 @@ class CfgReference(CfgMap):
                 if cfg.is_leaf():
                     ref = cfg.format()
                     cfg.set_value(self.referent.refer(ref))
-                    cfg['name'] = ref
-                elif 'name' not in cfg:
-                    cfg['name'] = '_anonymous'
+                    cfg['_name'] = ref
+                elif '_name' not in cfg:
+                    cfg['_name'] = '_anonymous'
 
         if super(CfgReference, self).pre_format(parent_cfg):
             if self.list_ok:

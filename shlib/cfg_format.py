@@ -24,6 +24,7 @@ class CmdsCfg(CfgMapList):
 class HostsCfg(CfgMapMap):
     _fields = [
             CfgField('hostname', str, required=True, aliases=('addr'), list_ok=True),
+            CfgField('name', str, aliases='_name'),
             CfgMap('ssh', inherit=SshCfg),
             CfgField('log_dir', inherit=LogDirCfg)
     ]
@@ -32,6 +33,7 @@ class FilesCfg(CfgMapMap):
     _fields = [
             CfgField('src', str, required=True),
             CfgField('dst', str, required=True),
+            CfgField('name', str, aliases='_name'),
             CfgReference('hosts', HostsCfg, list_ok = True, required=True, aliases=('host'))
     ]
     _computed_fields = [
@@ -49,6 +51,7 @@ class ProgramLogCfg(CfgMap):
 class ProgramsCfg(CfgMapMap):
     _fields = [
             CfgReference('hosts', HostsCfg, list_ok = True, aliases=('host')),
+            CfgField('name', str, aliases=('_name')),
             CfgField('start', str, required=True),
             CfgField('stop', str, default=None),
             # TODO: Add 'kill' field
