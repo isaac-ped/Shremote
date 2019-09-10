@@ -1,6 +1,7 @@
 import copy
 import re
 import pprint
+import os
 from collections import defaultdict
 
 class CfgKeyError(KeyError):
@@ -36,31 +37,34 @@ class FmtConfig(object):
 
     def set_value(self, raw_entry):
         if isinstance(raw_entry, FmtConfig):
-            if raw_entry.is_map():
-                computed_mask = {k: v.is_computed() for k, v in raw_entry.items()}
-            elif raw_entry.is_list():
-                computed_mask = {i: v.is_computed() for i, v in enumerate(raw_entry)}
+            if raw_entry.is_map() or raw_entry.is_list():
+                self.__subfields = copy.deepcopy(raw_entry.get_subfields())
+                self.__leaf = False
             else:
-                computed_mask = defaultdict(lambda : raw_entry.is_computed())
-                computed = raw_entry.is_computed()
-            raw_entry = raw_entry.get_raw()
-        else:
-            computed_mask = defaultdict(lambda: False)
+                self.__leaf = True
+            self.__raw = raw_entry.get_raw()
+            self.__is_computed = raw_entry.is_computed()
+            return
 
         self.__raw = raw_entry
-
-        if isinstance(raw_entry, dict):
-            if isinstance(raw_entry, defaultdict):
-                self.__subfields = defaultdict(lambda : FmtConfig( raw_entry.default_factory(), self.__path + ['?'], self.__root, self.__formattable, True))
-            else:
-                self.__subfields = {}
-                for k, v in raw_entry.items():
-                    self.__subfields[k] = FmtConfig(v, self.__path + [k], self.__root, self.__formattable, computed_mask[k])
+        if isinstance(raw_entry, defaultdict):
+            self.__subfields = defaultdict(
+                    lambda : FmtConfig(raw_entry.default_factory(),
+                                       self.__path + ['?'], self.__root,
+                                       self.__formattable, True)
+            )
+            self.__leaf = False
+        elif isinstance(raw_entry, dict):
+            self.__subfields = {}
+            for k, v in raw_entry.items():
+                self.__subfields[k] = FmtConfig(v, self.__path + [k], self.__root,
+                                                self.__formattable, self.__is_computed)
             self.__leaf = False
         elif isinstance(raw_entry, list):
             self.__subfields = []
             for i, v in enumerate(raw_entry):
-                self.__subfields.append(FmtConfig(v, self.__path + [i], self.__root, self.__formattable, computed_mask[i]))
+                self.__subfields.append(FmtConfig(v, self.__path + [i], self.__root,
+                                                  self.__formattable, self.__is_computed))
             self.__leaf = False
         else:
             self.__leaf = True
