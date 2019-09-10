@@ -274,11 +274,11 @@ class FmtConfig(object):
 
     def __deepcopy__(self, memo):
         if self.__leaf:
-            return FmtConfig(self.__raw, self.__path, self.__root, self.__formattable, self.__is_computed)
+            cpy = FmtConfig(self.__raw, self.__path, self.__root, self.__formattable, self.__is_computed)
+        else:
+            subf_copy = copy.deepcopy(self.__subfields, memo)
 
-        subf_copy = copy.deepcopy(self.__subfields, memo)
-
-        cpy = FmtConfig(subf_copy, self.__path, self.__root, self.__formattable, self.__is_computed)
+            cpy = FmtConfig(subf_copy, self.__path, self.__root, self.__formattable, self.__is_computed)
 
         if self.__default_computed_subfields_enabled:
             cpy.enable_computed_fields()
@@ -385,7 +385,10 @@ class FmtConfig(object):
         while eval_grp is not None:
             # Cut off the starting $, leaving (...)
             to_eval = eval_grp[1:]
-            rep_with = str(eval(to_eval))
+            try:
+                rep_with = str(eval(to_eval))
+            except Exception as e:
+                raise CfgFormatException("Error raised while evaluating {}: {}".format(to_eval, e))
             value = value.replace(eval_grp, rep_with)
             eval_grp = cls.innermost_exec_str(value)
         return value
