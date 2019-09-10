@@ -1,5 +1,5 @@
 from collections import defaultdict
-from fmt_config import  CfgFormatException
+from fmt_config import  CfgFormatException, FmtConfig
 
 class CfgMetaFormatException(Exception):
     pass
@@ -82,8 +82,6 @@ class CfgField(object):
             else:
                 parent_cfg[self.key] = direct_inherit
 
-
-
     def _set_types(self, cfg):
         if self.types is not None:
             for _type in self.types:
@@ -94,6 +92,8 @@ class CfgField(object):
             parent_cfg[self.key] = [parent_cfg[self.key]]
 
     def pre_format(self, parent_cfg):
+        if not isinstance(parent_cfg, FmtConfig):
+            raise CfgFormatException("Config item '%s' is not of the right type (is %s)" % (parent_cfg, type(parent_cfg)))
         self._check_aliases(parent_cfg)
         self._set_default(parent_cfg)
         self._do_inherit(parent_cfg)
