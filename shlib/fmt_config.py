@@ -173,7 +173,8 @@ class FmtConfig(object):
             self[path[0]].setpath(path[1:], value, is_computed or self.__is_computed)
 
     def merge(self, value):
-        value = FmtConfig(value, self.__path, self.__root)
+        if not isinstance(value, FmtConfig):
+            value = FmtConfig(value, self.__path, self.__root)
         for k, v in value.items():
             if k not in self:
                 self[k] = v
