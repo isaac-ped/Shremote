@@ -87,11 +87,12 @@ class FmtConfig(object):
         self.__formattable_root = obj
         self.__formattable = True
 
+    #### TODO: This is a global copy of the object. That is bad.
     def set_format_kwargs(self, kwargs):
         if self.__formattable_root is not None:
             FmtConfig.__format_kwargs = copy.deepcopy(self.__formattable_root)
         else:
-            FmtConfig.__format_kwargs = FmtConfig({}, self.__path, self.__root, self.__formattable, True)
+            FmtConfig.__format_kwargs = FmtConfig({}, self.__path, self.__root, self.__formattable)
         for k, v in kwargs.items():
             FmtConfig.__format_kwargs[k] = v
 
