@@ -3,6 +3,9 @@ import re
 import pprint
 from collections import defaultdict
 
+class CfgKeyError(KeyError):
+    pass
+
 class CfgFormatException(Exception):
     pass
 
@@ -403,7 +406,9 @@ class FmtConfig(object):
                         formatted = formatted.format(self.__root, **self.__format_kwargs)
                     else:
                         formatted = formatted.format(_strip_escaped_eval = False, **self.__format_kwargs)
-                except KeyError as e:
+                except CfgKeyError as e:
+                    raise
+                except KeyError as e1:
                     # If default subfields are already enabled, there's an issue
                     if self.__default_computed_subfields_enabled:
                         raise
@@ -422,10 +427,9 @@ class FmtConfig(object):
                                 .format(self.__name, formatted, computed_keys)
                             )
 
-                        except Exception as e:
+                        except Exception as e2:
                             self.__format_kwargs.disable_computed_fields()
-
-                    raise
+                    raise CfgKeyError("Error formatting {} ({}): {}".format(self.__name, formatted, e1.args[0]))
                 try:
                     formatted = self.do_eval(formatted)
                 except:
