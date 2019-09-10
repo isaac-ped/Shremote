@@ -37,7 +37,8 @@ class FilesCfg(CfgMapMap):
             CfgReference('hosts', HostsCfg, list_ok = True, required=True, aliases=('host'))
     ]
     _computed_fields = [
-            CfgField('out_dir', str)
+            CfgField('local_out', str),
+            CfgField('remote_out', str)
     ]
 
 class ProgramLogCfg(CfgMap):
@@ -77,6 +78,7 @@ class CommandsCfg(CfgMapList):
             CfgField('host_idx', int),
             CfgField('log_dir', str),
             CfgField('host', lambda : defaultdict(str)),
+            CfgField('remote_out', str)
     ]
 
     _child_inherit = ['program', 'defaults']
@@ -111,7 +113,17 @@ def load_cfg(cfg, fmt = CfgFmt()):
 if __name__ == '__main__':
     import sys
     cfg = load_cfg(sys.argv[1])
+
+    cfg.user = 'YourUsername'
+    cfg.label = 'ShremoteLabel'
+    cfg.cfg_dir = sys.argv[1]
+
+    default_kwargs = dict(
+            host_idx = -1,
+            log_dir = 'prog_log_dir',
+            remote_out = 'remote_out_dir',
+    )
     for cmd in cfg.commands:
-        start = cmd.program.start.format(host_idx=0, host = cmd.hosts[0])
+        start = cmd.program.start.format(host=cmd.hosts[0], **default_kwargs)
         begin = cmd.begin.format()
         print("Command '{}'\n\tstarts at time {}".format(start, begin))
