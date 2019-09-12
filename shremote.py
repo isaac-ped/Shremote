@@ -3,6 +3,7 @@ from __future__ import print_function
 
 from shlib.checked_process import shell_call, start_shell_call, ssh_call, start_ssh_call
 from shlib.cfg_format import load_cfg
+from shlib.fmt_config import CfgFormatException
 from shlib.include_loader import IncludeLoader
 from shlib.logger import * # log*(), set_logfile(), close_logfile()
 
@@ -103,7 +104,7 @@ class ShFile(object):
                 raise
 
             try:
-                self.cfg_dst.format(remote_output = host.log_dir, host = host.cfg)
+                self.cfg_dst.format(host = host.cfg)
             except (KeyError, CfgFormatException) as e:
                 log_error("Error formatting dest of file {}: {}".format(self.name, e))
                 raise
@@ -111,7 +112,7 @@ class ShFile(object):
     def copy_to_host(self):
         for host in self.hosts:
             src = self.cfg_src.format(host = host.cfg)
-            dst = self.cfg_dst.format(remote_output = host.log_dir, host = host.cfg)
+            dst = self.cfg_dst.format(host = host.cfg)
             host.copy_to(src, dst, background=False)
 
 class ShLog(object):
@@ -206,14 +207,12 @@ class ShProgram(object):
         log_dir = self.log.log_dir(host, host_idx)
         return self.start.format(host_idx = host_idx,
                                  log_dir = log_dir,
-                                 remote_output = host.log_dir,
                                  host = host.cfg) +\
                 self.log.suffix(host, host_idx)
 
     def stop_cmd(self, host, host_idx):
         if self.stop is not None:
-            return self.stop.format(host_idx = host_idx,
-                                    remote_output = host.log_dir)
+            return self.stop.format(host_idx = host_idx, host = host.cfg)
         else:
             return None
 
@@ -350,7 +349,7 @@ class ShRemote(object):
         self.cfg.label = label
         self.cfg.user = os.getenv('USER')
         self.cfg.cfg_dir = os.path.dirname(cfg_file)
-        self.cfg.local_output = self.output_dir
+        self.cfg.output_dir = self.output_dir
         log("Assuming user is : %s" % self.cfg.user)
 
         self.label = label
