@@ -7,7 +7,7 @@ from shlib.fmt_config import CfgFormatException
 from shlib.include_loader import IncludeLoader
 from shlib.logger import * # log*(), set_logfile(), close_logfile()
 
-from shremote_old import main as old_main
+from shlib.cfg_format_v0 import likely_v0_cfg, load_v0_cfg
 
 import threading # For threading.Event
 import argparse
@@ -343,7 +343,16 @@ class ShRemote(object):
 
         self.cfg_file = cfg_file
         log("Loading %s" % cfg_file)
-        self.cfg = load_cfg(cfg_file)
+
+        try:
+            self.cfg = load_cfg(cfg_file)
+        except Exception:
+            if likely_v0_cfg(cfg_file):
+                log_warn("Exception encountered loading {}. "
+                         "Attempting to fall back to older cfg format".format(cfg_file))
+                self.cfg = load_v0_cfg(cfg_file)
+            else:
+                raise
 
         self.cfg.args = args_dict
         self.cfg.label = label
@@ -514,8 +523,6 @@ def main():
     parser.add_argument('--get-only', action='store_true', help='Only get log files, do not run')
     parser.add_argument('--out', type=str, default='.', help="Directory to output files into")
     parser.add_argument('--delete-remote', action='store_true', help='Deletes remote log directories')
-    parser.add_argument('--v1-fallback', action='store_true',
-            help='Fall back to old shremote version if this one fails')
     parser.add_argument('--args', type=str, required=False,
                         help="Additional arguments which are passed to the config file (format 'k1:v1;k2:v2')")
 
@@ -527,15 +534,7 @@ def main():
             k, v = entry.split(":")
             sh_args[k] = v
 
-    try:
-        shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args)
-    except CfgFormatException as e:
-        if not args.v1_fallback:
-            log_warn("Execution failed. Try running with --v1-fallback to attempt older version")
-            raise
-        else:
-            log_warn("Encountered exception:\n\t{}\nFalling back to old shremote version".format(e))
-            return old_main()
+    shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args)
 
     if args.parse_test:
         exit(0)
