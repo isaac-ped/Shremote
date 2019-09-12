@@ -2,6 +2,7 @@ import copy
 import re
 import pprint
 import os
+from logger import log_warn
 from collections import defaultdict
 
 class CfgKeyError(KeyError):
@@ -89,6 +90,9 @@ class FmtConfig(object):
 
     #### TODO: This is a global copy of the object. That is bad.
     def set_format_kwargs(self, kwargs):
+        for key in kwargs:
+            if key not in self.__formattable_root:
+                log_warn("Providing undocumented computed field to {}: {}".format(self.__name, key))
         if self.__formattable_root is not None:
             FmtConfig.__format_kwargs = copy.deepcopy(self.__formattable_root)
         else:
