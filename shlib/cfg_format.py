@@ -4,10 +4,6 @@ from cfg_formatter import CfgField, CfgMap, CfgMapList, CfgMapMap, CfgReference,
 from fmt_config import FmtConfig
 from include_loader import IncludeLoader
 
-class LogDirCfg(CfgField):
-    def __init__(self, key, *args, **kwargs):
-        super(LogDirCfg, self).__init__(key, str, '~/shremote_logs', *args, **kwargs)
-
 class SshCfg(CfgMap):
     _fields = [
             CfgField('user', str, '{0.user}'),
@@ -26,7 +22,10 @@ class HostsCfg(CfgMapMap):
             CfgField('hostname', str, required=True, aliases=('addr'), list_ok=True),
             CfgField('name', str, aliases='_name'),
             CfgMap('ssh', inherit=SshCfg),
-            CfgField('log_dir', inherit=LogDirCfg)
+            CfgField('log_dir', str, default="{0.log_dir}"),
+    ]
+    _reserved_fields = [
+            CfgField('output_dir', str, default="$(os.path.join('{host.log_dir}', '{0.label}'))")
     ]
 
 class FilesCfg(CfgMapMap):
@@ -37,8 +36,7 @@ class FilesCfg(CfgMapMap):
             CfgReference('hosts', HostsCfg, list_ok = True, required=True, aliases=('host'))
     ]
     _computed_fields = [
-            CfgField('local_out', str),
-            CfgField('remote_out', str)
+            CfgField('host', lambda : defaultdict(str))
     ]
 
 class ProgramLogCfg(CfgMap):
@@ -74,18 +72,21 @@ class CommandsCfg(CfgMapList):
             CfgField('max_duration', [float, NullType], default=None),
     ]
 
+    _reserved_fields = [
+            CfgField('log_dir', str, default="$(os.path.join('{host.output_dir}', '{program.log.dir}'))")
+    ]
+
+
     _computed_fields = [
             CfgField('host_idx', int),
-            CfgField('log_dir', str),
             CfgField('host', lambda : defaultdict(str)),
-            CfgField('remote_out', str)
     ]
 
     _child_inherit = ['program', 'defaults']
 
 class CfgFmt(TopLvlCfg):
     _fields = [
-            LogDirCfg('log_dir'),
+            CfgField('log_dir', str, default="~/shremote_logs"),
             SshCfg('ssh'),
             CmdsCfg('init_cmds', format_root=True),
             CmdsCfg('post_cmds', format_root=True),
@@ -99,7 +100,8 @@ class CfgFmt(TopLvlCfg):
             CfgField('user', str),
             CfgField('label', str),
             CfgField('args', defaultdict),
-            CfgField('cfg_dir', str)
+            CfgField('output_dir', str),
+            CfgField('cfg_dir', str),
     ]
 
 def load_cfg(cfg, fmt = CfgFmt()):
@@ -121,8 +123,8 @@ if __name__ == '__main__':
     default_kwargs = dict(
             host_idx = -1,
             log_dir = 'prog_log_dir',
-            remote_out = 'remote_out_dir',
     )
+
     for cmd in cfg.commands:
         start = cmd.program.start.format(host=cmd.hosts[0], **default_kwargs)
         begin = cmd.begin.format()
