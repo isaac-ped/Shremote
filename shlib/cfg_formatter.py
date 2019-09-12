@@ -117,6 +117,7 @@ class CfgField(object):
 
 class CfgMap(CfgField):
     _fields = []
+    _reserved_fields = []
     _computed_fields = []
     _child_inherit = None
 
@@ -125,6 +126,11 @@ class CfgMap(CfgField):
         self.format_root = format_root
 
     def pre_format_children(self, cfg):
+        for field in self._reserved_fields:
+            if field.key in cfg:
+                if cfg[field.key].get_raw() != field.default:
+                    raise CfgFormatException("Reserved field '%s' specified in '%s'" % (field.key, cfg.get_name()))
+            field.pre_format(cfg)
         for field in self._fields:
             field.pre_format(cfg)
 
@@ -205,7 +211,6 @@ class CfgMapMap(CfgMap):
             self.format_value(value)
 
             if self.format_root:
-                print("Setting %s formattable" % value.get_name())
                 value.set_formattable()
 
 
