@@ -161,7 +161,7 @@ which must have been provided by the user from the command line, such as:
 * `{host.addr}` (within a command or program)
 will be substituted for the address of the host on which
 the currently executing command is running.
-* `{remote_output}` will be substituted for the directory
+* `{remote_log_dir}` will be substituted for the directory
 into which logs are placed on a remote host
 
 #### Evaluation
@@ -210,94 +210,101 @@ they must follow specified formats.
 
 The following are the utilized fields at the root level of the config:
 
-##### log_dir
+##### `log_dir`
 The directory into which logs are placed on remote hosts.
 
 * **Default**: `~/shremote_logs`
 * **Overridden by**: `hosts.<host>.log_dir`
 
-##### ssh
+##### `ssh`
 The parameters passed to ssh calls for connecting to remote hosts.
 
 * **Fields**
-  * user: defaults to `{0.user}`
-  * key: ssh key to use. Defaults to `~/.ssh/id_rsa`
-  * port: defaults to 22
+  * `user`: defaults to `{0.user}`
+  * `key`: ssh key to use. Defaults to `~/.ssh/id_rsa`
+  * `port`: defaults to 22
 * **Overridden by**: `host.<host>.ssh`
 
-##### init_cmds/post_cmds
-These commands are executed *on the local host* at the start/end of execution.
+##### `init_cmds`/`post_cmds`
+These commands are executed **on the local host** at the start/end of execution.
 
 For `init_cmds`, before files are copied or any remote calls are made.
 For `post_cmds`, after files are copied back to the local host
 
 * **Format**: List of maps
 * **Fields**:
-  * cmd: A string with the command to execute
-  * checked_rtn: If an integer, a non-matching return code will abort execution. Otherwise, set to `null`
+  * `cmd`: A string with the command to execute
+  * `checked_rtn`: If an integer, a non-matching return code will abort execution. Otherwise, set to `null`
 
-##### hosts
+##### `hosts`
 Remote hosts on which to execute commands
 
 * **Format**: Map of maps
 * **Fields**:
-  * name: (automatically filled) Defaults to the key that defines this host
-  * addr: The address (Hostname or IP) to use for ssh'ing
-  * ssh: (optional) overrides `ssh` above
-  * log_dir: (optional) Overrides `log_dir` above
+  * `name`: (automatically filled) Defaults to the key that defines this host
+  * `hostname`: The address (Hostname or IP) to use for ssh'ing
+  * `ssh`: (optional) overrides `ssh` above
+  * `log_dir`: (optional) Overrides `log_dir` above
+* **Computed Fields**:
+  * `output_dir`: The directory to which this experiment's logs are output on this host
+  (`{log_dir}/{0.label}`)
 * **Referenced by**: `files.<file>.hosts`, `programs.<program>.hosts`, `commands.<command>.hosts`
 
-##### files
+##### `files`
 Specifies files to be copied from the local host to remote hosts
 
 * **Format**: Map of maps
 * **Fields**:
-  * name: (automatically filled) defaults to the key that defines this file
-  * src: The source location of the file on the local host
-  * dst: The destination of the file on the remote host
-  * hosts: Host(s) (or references to host(s)) onto which the file should be copied
+  * `name`: (automatically filled) defaults to the key that defines this file
+  * `src`: The source location of the file on the local host
+  * `dst`: The destination of the file on the remote host
+  * `hosts`: Host(s) (or references to host(s)) onto which the file should be copied
 * **Computed fields**:
-  * remote_out: The remote log directory
+  * `host`: If copying to multiple hosts, the config map of the current host.
+  Thus `{host.output_dir}` references the output directory on the remote host
 * **Referenced by**: `commands.<command>.program`
 
-##### programs
+##### `programs`
 Specifies programs to be executed on remote hosts.
 
 * **Format**: Map of maps
 * **Fields**:
-  * name: (automatically filled) defaults to the key that defines this program
-  * hosts: Host(s) (or references to host(s)) on which the program should be executed. Optional, and overridden by `hosts` in a `command` (if present).
-  * start: The shell command used to start this program
-  * stop: (optional) The shell command used to stop this program, if it is to run in the background, or to be stopped prematurely.
-  * duration_reduced_error: (optional) If `true`, shremote will throw an error if the program than the command's `min_duration`. Defaults to `true`.
-  * duration_exceeded_error`: (optional) If `true`, shremote will throw an error if the program lasts longer than the command's `max_duration`. Defaults to `false`.
-  * bg: (optional) If `true`, the command will run in the background, and will have to be manually stopped with the `stop` command
-  * defaults: (optional) Provides default arguments for string substitution. Overridden by fields in the `command`
+  * `name`: (automatically filled) defaults to the key that defines this program
+  * `hosts`: Host(s) (or references to host(s)) on which the program should be executed.
+  Optional, and overridden by `hosts` in a `command` (if present).
+  * `start`: The shell command used to start this program
+  * `stop`: (optional) The shell command used to stop this program, if it is to run in the background, or to be stopped prematurely.
+  * `duration_reduced_error`: (optional) If `true`, shremote will throw an error if the program executes for shorter than the command's `min_duration`. Defaults to `true`.
+  * `duration_exceeded_error`: (optional) If `true`, shremote will throw an error if the program lasts longer than the command's `max_duration`. Defaults to `false`.
+  * `bg`: (optional) If `true`, the command will run in the background, and will have to be manually stopped with the `stop` command
+  * `defaults`: (optional) Provides default arguments for string substitution. Overridden by fields in the `command`
   * log: A map containing:
-    * dir: (optional) A sub-directory into which logs should be placed
-    * out: (optional) A file to which stdout should be logged
-    * err: (optional) A file to which stderr should be logged
+    * `dir`: (optional) A sub-directory into which logs should be placed
+    * `out`: (optional) A file to which stdout should be logged
+    * `err`: (optional) A file to which stderr should be logged
 * **Computed fields**: See `commands.computed_fields` below
 
-##### commands
+##### `commands`
 Specifies when and where to execute commands
 
 * **Format**: List of maps
 * **Fields**:
-  * program: Program (or references to program) to execute
-  * hosts: Host(s) (or references to host(s)) on which to execute the program. Overrides any host defined within the program.
-  * begin: The time, relative to the start of the experiment, at which to run the command
-  * min_duration: The minimum duration to run the command for. Only has an effect if `program.duration_reduced_error` is set to true
-  * max_duration: The maximum duration for which the command is to be run. The command is killed after this duration is exceeded. If `program.duration_exceeded_error` is `true`, reaching this duration will raise an error
+  * `program`: Program (or reference to program) to execute
+  * `hosts`: Host(s) (or references to host(s)) on which to execute the program. Overrides any host defined within the program.
+  * `begin`: The time, relative to the start of the experiment, at which to run the command
+  * `min_duration`: The minimum duration to run the command for. Only has an effect if `program.duration_reduced_error` is set to true
+  * `max_duration`: The maximum duration for which the command is to be run. The command is killed after this duration is exceeded. If `program.duration_exceeded_error` is `true`, reaching this duration will raise an error
 * **Computed fields**:
-  * host_idx: If executing on multiple hosts, the index of the currently-executing host
-  * log_dir: The full path to the log directory for this program, including `<program>.log.dir`. To be used if additional logs are to be produced
-  * host: If executing on multiple hosts, the config map of the host on which the command is executed
+  * `host_idx`: If executing on multiple hosts, the index of the currently-executing host
+  * `log_dir`: The full path to the log directory for this program (including `<program>.log.dir`) on the active host.
+  * `host`: If executing on multiple hosts, the config map of the host on which the command is currently being executed
 
 ##### Root-level computed fields
 These fields are available with `{0.<field>}` throughout the config
 
-* user: The user currently executing the config
-* label: The label provided on starting Shremote
-* cfg_dir: The directory in which the config file resides
-* args: A map of the key-value argument provided in the `--args` argument at startup
+* `user`: The user currently executing the config
+* `label`: The label provided on starting Shremote
+* `output_dir`: The directory that logs will be copied to on the local machine
+* `cfg_dir`: The directory in which the config file resides
+* `args`: A map of the key-value argument provided in the `--args` argument at startup.
+  e.g. if the args string is `--args "key_a:value_b"`, the string `{0.args.key_a}` will be replaced by `value_b`
