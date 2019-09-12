@@ -13,7 +13,7 @@ programs:
 files:
     file_1:
         src: '{0.cfg_dir}/file'
-        dst: '{out_dir}/file'
+        dst: '{host.output_dir}/file'
         hosts: host2
 
 computed_a: $( 15 + 2 )

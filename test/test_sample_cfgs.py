@@ -3,6 +3,7 @@ import test_files
 import os
 import shutil
 from shlib.cfg_format import load_cfg as load_cfg_file
+from shlib.fmt_config import CfgFormatException, CfgKeyError
 from shremote import ShRemote
 
 class TestSampleCfgs(unittest.TestCase):
@@ -20,12 +21,49 @@ class TestSampleCfgs(unittest.TestCase):
             'test_computed_fields.yml',
             'test_escaped_computation.yml',
             'test_escaped_reference.yml',
-            'multi_host_cfg.yml'
+            'multi_host_cfg.yml',
+            'uses_computed_fields.yml'
         ]
 
         for cfg in cfgs:
             print("Testing cfg %s\n" % cfg)
             ShRemote(os.path.join('sample_cfgs', cfg), 'cfg_test', self.TEST_OUTPUT_DIR, {})
+
+    def test_succeeds_on_provided_computed_fields(self):
+        cfg = load_cfg_file('sample_cfgs/uses_computed_fields.yml')
+        cfg.user = 'username'
+        cfg.label = 'label'
+        cfg.cfg_dir = '.'
+        cfg.output_dir = './output'
+        for cmd in cfg['commands']:
+            cmd.program.start.format(host_idx = 0, log_dir='./logs', host = cmd.hosts[0])
+
+        for file in cfg['files'].values():
+            file.src.format(host=file.hosts[0])
+            file.dst.format(host=file.hosts[0])
+
+    def test_fails_on_unprovided_computed_field(self):
+        cfg = load_cfg_file("sample_cfgs/uses_computed_fields.yml")
+        for command in cfg['commands']:
+            threw_exception = False
+            try:
+                command.program.start.format()
+            except (CfgFormatException, CfgKeyError) as e:
+                threw_exception = True
+            self.assertTrue(threw_exception, "Command {}: {} did not throw an exception when formatted".format(command.program.name, command.program.start.get_raw()))
+
+        for file in cfg['files'].values():
+            threw_exception = False
+            try:
+                file.src.format()
+            except (CfgFormatException, CfgKeyError) as e:
+                threw_exception = True
+            self.assertTrue(threw_exception, "File {} : {} did not throw an exception".format(file.name, file.src.get_raw()))
+            try:
+                file.dst.format()
+            except (CfgFormatException, CfgKeyError) as e:
+                threw_exception = True
+            self.assertTrue(threw_exception, "File {} : {} did not throw an exception".format(file.name, file.dst.get_raw()))
 
     def test_default_args(self):
         cfg = load_cfg_file("sample_cfgs/default_args_test.yml")
@@ -34,7 +72,7 @@ class TestSampleCfgs(unittest.TestCase):
         start2 = cfg.commands[1].to_echo.format(host=cfg.commands[1].hosts[0])
         self.assertEqual(start2, "Goodbye local", "Default was not overridden,  instead: %s" % start2)
 
-    def test_computed_fields(self):
+    def test_evaled_fields(self):
         cfg = load_cfg_file("sample_cfgs/test_computed_fields.yml")
         self.assertEqual(cfg.commands[0].begin.format(), 42,
                          "Begin (numerical) computation not applied")
@@ -44,7 +82,7 @@ class TestSampleCfgs(unittest.TestCase):
                          "program.start (str reference) computation not applied")
 
 
-    def test_escaped_computed_fields(self):
+    def test_escaped_evaled_fields(self):
         cfg = load_cfg_file("sample_cfgs/test_escaped_computation.yml")
         self.assertEqual(cfg.commands[0].computed.format(), 'x' * 42,
                          "Computed field not set properly")
