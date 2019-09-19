@@ -251,9 +251,9 @@ class ShCommand(object):
         try:
             self.program.log.assert_no_overlap(other.program.log)
         except ShException:
-            log_error("Instances of two commands log to the same file, and will clobber each other:")
-            log_error(self.pformat())
-            log_error(other.pformat())
+            log_error("Instances of two commands log to the same file,"
+                      "and will clobber each other:")
+            log_error(self.cfg.program.log.pformat())
             raise
 
     def validate(self):
