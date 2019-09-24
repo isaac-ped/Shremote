@@ -14,11 +14,11 @@ def fix_programs_cfg(cfg):
 
 def fix_commands_cfg(cfg):
     for command in cfg['commands']:
-        if 'min_duration' not in command:
+        if command.min_duration.format() is None:
             if 'enforce_duration' in command and command.enforce_duration is not True:
                 log_warn("command.enforce_duration has been renamed to command.min_duration")
                 command.min_duration = command.enforce_duration
-        if 'max_duration' not in command:
+        if command.max_duration.format() is None:
             if 'duration' in command:
                 log_warn("command.duration has been renamed to command.max_duration")
                 command.max_duration = command.duration
