@@ -91,7 +91,7 @@ programs:
 
 commands:
     - program: echo
-      to_echo "Hello world: multiple levels of indirection!"
+      to_echo: "Hello world: multiple levels of indirection!"
       begin: 0
 ```
 
