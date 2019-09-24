@@ -9,6 +9,7 @@ from shlib.logger import * # log*(), set_logfile(), close_logfile()
 
 from shlib.cfg_format_v0 import likely_v0_cfg, load_v0_cfg
 
+import re
 import threading # For threading.Event
 import argparse
 import pprint
@@ -16,6 +17,7 @@ import os
 import json
 import signal
 import itertools
+import textwrap
 
 class ShException(Exception):
     pass
@@ -279,12 +281,16 @@ class ShCommand(object):
             log_error("Cannot specify min_duration for a backgrounded program: {}"
                       .format(start_cmd))
 
-    def start(self, log_entry):
-        threads = []
+    def cmd_text_iter(self):
         for i, host in enumerate(self.hosts):
-            host_log_entry = {}
             start_cmd = self.program.start_cmd(host, i)
             stop_cmd = self.program.stop_cmd(host, i)
+            yield host, start_cmd, stop_cmd
+
+    def start(self, log_entry):
+        threads = []
+        for host, start_cmd, stop_cmd in self.cmd_text_iter():
+            host_log_entry = {}
 
             host_log_entry['addr_'] = host.addr
             host_log_entry['start_'] = start_cmd
@@ -331,14 +337,15 @@ class ShRemote(object):
         log_error("CTRL+C PRESSED!")
         self.event.set()
 
-    def __init__(self, cfg_file, label, out_dir, args_dict):
+    def __init__(self, cfg_file, label, out_dir, args_dict, suppress_output):
         self.event = threading.Event()
         signal.signal(signal.SIGINT, self.sigint_handler)
 
         self.output_dir = os.path.join(out_dir, label, '')
         log("Making output directory: %s" % self.output_dir)
-        shell_call('mkdir -p "%s"' % self.output_dir, auto_shlex=True, checked_rtn = 0)
-        set_logfile(os.path.join(self.output_dir, 'shremote.log'))
+        if not suppress_output:
+            shell_call('mkdir -p "%s"' % self.output_dir, auto_shlex=True, checked_rtn = 0)
+            set_logfile(os.path.join(self.output_dir, 'shremote.log'))
         log("Made output dir")
 
         self.cfg_file = cfg_file
@@ -376,7 +383,17 @@ class ShRemote(object):
         for cfg in self.cfg.get('files', {}).values():
             self.files.append(ShFile(cfg, self.output_dir))
 
-        self.validate()
+    def show_args(self):
+        required_args = set()
+        for entry in self.cfg.children(True):
+            if entry.is_leaf():
+                raw = entry.get_raw()
+                if isinstance(raw, str) and '{0.args.' in raw:
+                    for arg in re.findall('(?<={0.args.).+?(?=})', raw):
+                        required_args.add(arg)
+
+        log_info("Specified file requires the following command line arguments: {}"
+                 .format(', '.join(list(required_args))))
 
     def validate(self):
         for cmd in self.commands:
@@ -387,7 +404,6 @@ class ShRemote(object):
 
         for file in self.files:
             file.validate()
-
 
     def run_init_cmds(self):
         for cmd in self.init_cmds:
@@ -462,6 +478,25 @@ class ShRemote(object):
         with open(os.path.join(self.output_dir, 'event_log.json'), 'w') as f:
             json.dump(self.event_log, f, indent=2)
 
+    def show_commands(self):
+        cmds_summary = []
+        for cmd in self.commands:
+            cmd_summary = ['Time: {}'.format(cmd.begin)]
+            if cmd.max_duration is not None:
+                cmd_summary.append('Duration: {}'.format(cmd.max_duration))
+            if cmd.min_duration is not None:
+                cmd_summary.append('Minimum Duration: {}'.format(cmd.min_duration))
+            for host, start, stop in cmd.cmd_text_iter():
+                host_summary = ['Host: {}'.format(host.name)]
+                wrapped = textwrap.wrap(start)
+                start = ' \\\n\t\t\t'.join(wrapped)
+                host_summary.append('Start: {}'.format(start))
+                if stop is not None:
+                    host_summary.append('Stop: {}'.format(stop))
+                cmd_summary.append('\n\t\t'.join(host_summary))
+            cmds_summary.append('\n\t'.join(cmd_summary))
+        log_info('\n' + '\n'.join(cmds_summary))
+
     def run_commands(self):
         if self.event.is_set():
             log_error("Not running commands! Execution already halted")
@@ -534,10 +569,15 @@ def main():
             k, v = entry.split(":")
             sh_args[k] = v
 
-    shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args)
+    shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args, args.parse_test)
 
     if args.parse_test:
+        shremote.show_args()
+        shremote.validate()
+        shremote.show_commands()
         exit(0)
+
+    shremote.validate()
     if args.get_only:
         shremote.get_logs()
     else:
