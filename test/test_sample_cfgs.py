@@ -27,7 +27,7 @@ class TestSampleCfgs(unittest.TestCase):
 
         for cfg in cfgs:
             print("Testing cfg %s\n" % cfg)
-            ShRemote(os.path.join('sample_cfgs', cfg), 'cfg_test', self.TEST_OUTPUT_DIR, {})
+            ShRemote(os.path.join('sample_cfgs', cfg), 'cfg_test', self.TEST_OUTPUT_DIR, {}, True)
 
     def test_succeeds_on_provided_computed_fields(self):
         cfg = load_cfg_file('sample_cfgs/uses_computed_fields.yml')
