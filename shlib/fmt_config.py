@@ -323,12 +323,14 @@ class FmtConfig(object):
         if key.startswith('_FmtConfig'):
             return super(FmtConfig, self).__setattr__(key, value)
         self._assert_has_attrs(key)
-        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root, self.__is_computed)
+        self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root, self.__formattable, self.__is_computed)
+        self.__subfields[key]._set_format_root(self.__formattable_root)
 
     def __setitem__(self, key, value):
         self._assert_not_leaf(key)
         try:
-            self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root, self.__is_computed)
+            self.__subfields[key] = FmtConfig(value, self.__path + [key], self.__root, self.__formattable, self.__is_computed)
+            self.__subfields[key]._set_format_root(self.__formattable_root)
         except (TypeError, KeyError) as e:
             raise CfgFormatException("Error setting {} in {}: {}".format(key, self.__path, e))
 
