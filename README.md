@@ -102,7 +102,7 @@ which are described in detail below.
 
 ## Full Configuration Format
 
-The [configuration file format](cfg_format.yml)
+The [configuration file format](shlib/cfg_format.py)
 lists all of the fields which are available, referencable, or required,
 in the configuration file.
 
