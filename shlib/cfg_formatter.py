@@ -1,5 +1,5 @@
 from collections import defaultdict
-from fmt_config import  CfgFormatException, FmtConfig
+from .fmt_config import  CfgFormatException, FmtConfig
 
 class CfgMetaFormatException(Exception):
     pass

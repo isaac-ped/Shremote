@@ -2,7 +2,7 @@ import copy
 import re
 import pprint
 import os
-from logger import log_warn
+from .logger import log_warn
 from collections import defaultdict
 
 class CfgKeyError(KeyError):

@@ -2,9 +2,9 @@ import time
 import subprocess
 import shlex
 import traceback
-from logger import *
 from threading import Thread
-from fmt_config import CfgFormatException
+from .logger import *
+from .fmt_config import CfgFormatException
 
 try:
     from queue import Queue, Empty

@@ -1,10 +1,10 @@
 import yaml
-from logger import log_warn
 from collections import defaultdict
-from cfg_formatter import CfgField, CfgMap, CfgMapList, CfgMapMap, CfgReference, NullType, TopLvlCfg
-from fmt_config import FmtConfig
-from include_loader import IncludeLoader
-from cfg_format import CfgFmt
+from .cfg_formatter import CfgField, CfgMap, CfgMapList, CfgMapMap, CfgReference, NullType, TopLvlCfg
+from .logger import log_warn
+from .fmt_config import FmtConfig
+from .include_loader import IncludeLoader
+from .cfg_format import CfgFmt
 
 def fix_programs_cfg(cfg):
     for prog_name, program in cfg['programs'].items():

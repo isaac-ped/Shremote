@@ -1,8 +1,8 @@
 import yaml
 from collections import defaultdict
-from cfg_formatter import CfgField, CfgMap, CfgMapList, CfgMapMap, CfgReference, NullType, TopLvlCfg
-from fmt_config import FmtConfig
-from include_loader import IncludeLoader
+from .cfg_formatter import CfgField, CfgMap, CfgMapList, CfgMapMap, CfgReference, NullType, TopLvlCfg
+from .fmt_config import FmtConfig
+from .include_loader import IncludeLoader
 
 class SshCfg(CfgMap):
     _fields = [
