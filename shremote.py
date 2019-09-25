@@ -375,17 +375,8 @@ class ShRemote(object):
         commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
         self.commands = sorted(commands, key = lambda cmd: cmd.begin)
 
-<<<<<<< HEAD
         self.init_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('init_cmds', [])]
         self.post_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('post_cmds', [])]
-=======
-        call("mkdir -p %s" % self.output_dir, raise_error=True)
-        self.cfg = Config(self.raw_cfg, label=label, args=args_dict, out=self.output_dir,
-                          local_out = self.output_dir)
-        self.open_log()
-        self.cfg.set_permanent(remote_out = Log.get_log_dir())
-        log("Initialized cfg at {}, label {}".format(cfg_file, label))
->>>>>>> master
 
         self.event_log = []
 
@@ -432,31 +423,11 @@ class ShRemote(object):
         for cmd in self.commands:
             remote_dirs |= cmd.remote_log_directories()
 
-<<<<<<< HEAD
         log_info("About to delete the following directories:")
         for host, remote_dir in remote_dirs:
             log_info("%s: %s" % (host.addr, remote_dir))
 
         time.sleep(5)
-=======
-                    log('Verified mkdir: {}'.format(ssh_cmd))
-                    log('Verified scp: {}'.format(cmd))
-
-    def copy_files(self):
-        if 'files' not in self.cfg:
-            return
-        for name, file in self.cfg.files.dict.items():
-            src = file.formatted('src')
-            dst = file.formatted('dst')
-            dir = os.path.dirname(dst)
-
-            if 'host' in file:
-                file_hosts = [file.host]
-            elif 'hosts' in file:
-                file_hosts = file.hosts
-            else:
-                log_fatal("File {} does not specify host or hosts".format(name))
->>>>>>> master
 
         threads = []
         event = threading.Event()
