@@ -86,6 +86,7 @@ def walk_dict_values(d):
 def fix_format_substitutions(cfg):
     replacements = [
             ( '{0.log_dir}', '{0.output_dir}' ),
+            ( '{local_out}', '{0.output_dir}' ),
             ( '{0.local_out}', '{0.output_dir}' ),
             ( '{0.remote_out}', '{host.output_dir}' ),
             ( '{remote_out}', '{host.output_dir}'),
