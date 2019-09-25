@@ -111,7 +111,7 @@ The following is an overview of the configuration format and capabilities
 ### Capabilities
 
 #### References
-Certain fields in the [format spec](cfg_format.yml) have the type `reference`.
+Certain fields in the [format spec](shlib/cfg_format.py) are of type CfgReference..
 These fields (`file.host`, `program.host`, and `command.program`) allow
 the config file to reference another section by referring to it with a key.
 
