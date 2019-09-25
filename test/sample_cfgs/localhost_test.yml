@@ -1,0 +1,34 @@
+hosts:
+  localhost:
+    addr: localhost
+
+programs:
+    echo:
+        start: echo {to_echo}
+        hosts: localhost
+        log:
+            dir: echo
+            out: echo.txt
+            err: echo.err
+    bgecho:
+        start: >-
+            bash ~/Projects/Shremote/launch_in_bg.sh
+            bash ~/Projects/Shremote/start_sleeping.sh 100 {host.output_dir}/bgecho.txt
+        stop: pkill sleep
+        bg: true
+        hosts: localhost
+        log:
+            dir: bgecho
+
+computed_a: $( 15 + 2 )
+
+computed_b: $( 10 + 5 + {0.computed_a} )
+
+commands:
+    - program: echo
+      to_echo: "Hello world!"
+      begin: 5
+
+    - program: bgecho
+      begin: 5
+      max_duration: 20

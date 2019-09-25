@@ -1,7 +1,0 @@
-# ssh: Parameters for connecting to hosts. Required fields:
-#   user: ssh user
-#   key: location of private key
-#   port: ssh port
-user: '<user>'
-key: '~/.ssh/...'
-port: 22
