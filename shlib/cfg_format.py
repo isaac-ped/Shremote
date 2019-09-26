@@ -44,6 +44,7 @@ class ProgramLogCfg(CfgMap):
             CfgField('dir', str, default=''),
             CfgField('out', str),
             CfgField('err', str),
+            CfgField('append', bool, default=False)
     ]
 
 

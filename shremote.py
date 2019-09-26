@@ -124,6 +124,7 @@ class ShLog(object):
 
     def __init__(self, cfg):
         self.subdir = cfg.dir
+        self.do_append = cfg.append
 
         if 'out' in cfg:
             self.out = cfg.out
@@ -136,6 +137,9 @@ class ShLog(object):
             self.err = None
 
     def assert_no_overlap(self, other):
+        if self.do_append and other.do_append:
+            return
+
         if not self.subdir.format(host_idx=0) == other.subdir.format(host_idx=0):
             return
 
@@ -151,15 +155,20 @@ class ShLog(object):
         return os.path.join(host.log_dir, self.subdir.format(host_idx=host_idx))
 
     def suffix(self, host, host_idx):
+        if self.do_append:
+            redir = '>>'
+        else:
+            redir = '>'
+
         suffix = ''
         if self.out is not None:
-            suffix += ' > {}'.format(os.path.join(host.log_dir,
+            suffix += ' {} {}'.format(redir, os.path.join(host.log_dir,
                                                   self.subdir.format(host_idx = host_idx,
                                                                      host = host.cfg),
                                                   self.out.format(host_idx = host_idx,
                                                                   host = host.cfg)))
         if self.err is not None:
-            suffix += ' 2> {}'.format(os.path.join(host.log_dir,
+            suffix += ' 2{} {}'.format(redir, os.path.join(host.log_dir,
                                                    self.subdir.format(host_idx = host_idx,
                                                                       host = host.cfg),
                                                    self.err.format(host_idx = host_idx,

@@ -353,6 +353,10 @@ class FmtConfig(object):
         for x in self.__subfields:
             yield x
 
+    def __bool__(self):
+        if self.__leaf:
+            return self.format()
+
     def __len__(self):
         if self.__leaf:
             return len(self.__raw)
