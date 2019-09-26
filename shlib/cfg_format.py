@@ -67,7 +67,7 @@ class CommandsCfg(CfgMapList):
     _fields = [
             CfgReference('program', ProgramsCfg, required=True),
             CfgReference('hosts', HostsCfg, sibling_inherit=['program', 'hosts'], list_ok = True),
-            CfgField('begin', float, required=True, list_ok=True),
+            CfgField('begin', float, required=True),
             CfgField('min_duration', [float, NullType], default=None),
             CfgField('max_duration', [float, NullType], default=None),
     ]

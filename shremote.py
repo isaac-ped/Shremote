@@ -221,10 +221,10 @@ class ShProgram(object):
 
 class ShCommand(object):
 
-    def __init__(self, cfg, event, begin_cfg):
+    def __init__(self, cfg, event):
         self.cfg = cfg
         self.event = event
-        self.begin = begin_cfg.format()
+        self.begin = cfg.begin.format()
         self.program = ShProgram(cfg.program)
         self.hosts = ShHost.create_host_list(cfg.hosts)
         self.max_duration = cfg.max_duration.format()
@@ -234,11 +234,6 @@ class ShCommand(object):
             log_warn("Min duration specified but shorter_duration_error is false for: {}"
                      .format(self.pformat()))
             self.min_duration = None
-
-    @classmethod
-    def create_command_list(cls, cfg, event):
-        cmds = [cls(cfg, event, begin_cfg) for begin_cfg in cfg.begin]
-        return cmds
 
     def get_logs(self, local_dir, event=None):
         return self.program.log.copy_local(self.hosts, local_dir, background=True, event=event)
@@ -376,10 +371,8 @@ class ShRemote(object):
 
         self.label = label
 
-        commands = []
-        for cmd in self.cfg.commands:
-            commands.extend(ShCommand.create_command_list(cmd, self.event))
 
+        commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
         self.commands = sorted(commands, key = lambda cmd: cmd.begin)
 
         self.init_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('init_cmds', [])]
