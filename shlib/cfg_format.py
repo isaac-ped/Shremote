@@ -14,7 +14,7 @@ class SshCfg(CfgMap):
 class CmdsCfg(CfgMapList):
     _fields = [
             CfgField('cmd', str, required=True),
-            CfgField('checked_rtn', [int, bool], default=0, aliases=('check_rtn')),
+            CfgField('checked_rtn', [int, None], default=0, aliases=('check_rtn')),
     ]
 
 class HostsCfg(CfgMapMap):
@@ -59,7 +59,7 @@ class ProgramsCfg(CfgMapMap):
             CfgField('duration_reduced_error', bool, default=True),
             CfgField('duration_exceeded_error', bool, default=False),
             CfgField('bg', bool, default=False),
-            CfgField('checked_rtn', [int, bool], default=False, aliases=('check_rtn')),
+            CfgField('checked_rtn', [int, None], default=None, aliases=('check_rtn')),
             CfgField('defaults', dict, default=dict())
     ]
 
