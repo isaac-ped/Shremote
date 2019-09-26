@@ -489,7 +489,7 @@ class ShRemote(object):
                 cmd_summary.append('Minimum Duration: {}'.format(cmd.min_duration))
             for host, start, stop in cmd.cmd_text_iter():
                 host_summary = ['Host: {}'.format(host.name)]
-                wrapped = textwrap.wrap(start)
+                wrapped = textwrap.wrap(start, break_on_hyphens=False)
                 start = ' \\\n\t\t\t'.join(wrapped)
                 host_summary.append('Start: {}'.format(start))
                 if stop is not None:
