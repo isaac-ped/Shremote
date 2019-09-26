@@ -26,7 +26,7 @@ class CheckProc(object):
         while True:
             try:
                 line = queue.get_nowait()
-                log("{} - {}:{}".format(self.name, label, line), end='')
+                log("{} - {}:{}".format(self.name, label, line.decode('utf-8')), end='')
             except Empty:
                 break
 
