@@ -524,8 +524,6 @@ class ShRemote(object):
             last_begin = cmd.begin
             cmd.start(self.event_log)
 
-            print("MAX DUR", cmd.max_duration)
-            print("MIN DUR", cmd.min_duration)
             max_end = max(max_end, cmd.begin + \
                                     max(cmd.max_duration if cmd.max_duration is not None else 0,
                                         cmd.min_duration if cmd.min_duration is not None else 0))
