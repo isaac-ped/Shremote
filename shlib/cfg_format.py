@@ -58,7 +58,7 @@ class ProgramsCfg(CfgMapMap):
             CfgField('duration_reduced_error', bool, default=True),
             CfgField('duration_exceeded_error', bool, default=False),
             CfgField('bg', bool, default=False),
-            CfgField('checked_rtn', [int, bool], default=False, aliases=('check_rtn')),
+            CfgField('checked_rtn', [int, bool, NullType], default=None, aliases=('check_rtn')),
             CfgField('defaults', dict, default=dict())
     ]
 
