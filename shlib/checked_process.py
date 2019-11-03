@@ -1,5 +1,4 @@
 import time
-from threading import Thread
 from .logger import *
 
 
@@ -7,34 +6,38 @@ class CheckedProcessException(Exception):
     pass
 
 def get_name_from_cmd(cmd):
-    return cmd.split()[0]
+    if isinstance(cmd, str):
+        return cmd.split()[0]
+    return cmd[0]
 
 def monitor_wait(event, seconds):
-    if event is None:
-        if self.error_event.wait(seconds):
-            return False
+    if event is not None:
+        return event.wait(seconds)
     else:
         time.sleep(seconds)
-    return True
+        return False
 
 CHECK_CALL_INTERVAL= .2
 
 def monitor_process(process,
                     min_duration = None, max_duration = None,
-                    chacked_rtn = None, log_end=False,
+                    checked_rtn = None, log_end=False,
                     check_interval = CHECK_CALL_INTERVAL):
-    process.start()
+    if checked_rtn is False:
+        checked_rtn = None
+
     start_time = time.time()
-    rtn_code = process.poll(checked_rtn)
+    rtn_code = process.poll()
+    duration = 0
     while not process.exited:
-        duration = time.time() - start
+        duration = time.time() - start_time
 
         if max_duration is not None and duration > max_duration:
             log_error("Command \"", process.name, "\" executed for longer than ",
                       max_duration, " seconds")
             if process.STOPPABLE:
                 process.force_stop()
-            raise CheckedProcessException(name)
+            raise CheckedProcessException(process.name)
 
         if max_duration is not None:
             sleep_duration = min(max_duration - duration, check_interval)
@@ -42,26 +45,22 @@ def monitor_process(process,
         else:
             sleep_duration = check_interval
 
-        process.wait(sleep_duration)
+        if process.wait(sleep_duration):
+            log_warn("Stopping process monitor")
+            return
 
-        rtn_code = process.poll(checked_rtn)
+        rtn_code = process.poll()
 
     if checked_rtn is not None and rtn_code != checked_rtn:
         log_error("Command:\n\t%s\nReturned: %d\nExpected: %d\n" %
                       (process.name, rtn_code, checked_rtn),
                       "If this is not an error, add `checked_rtn: null` to command")
-        raise CheckedProcessException(name)
+        raise CheckedProcessException(process.name)
 
     if min_duration is not None and duration < min_duration:
         log_error("Command \"", process.name, "\" executed for ", duration,
                   "seconds; expected: ", min_duration)
-        raise CheckedProcessException(name)
+        raise CheckedProcessException(process.name)
 
     if log_end:
-        log("Command ", name, " executed for ", duration, " seconds")
-
-def launch_process_monitor(daemon, *args, **kwargs):
-    t = Thread(target = ssh_call, args=(cmd, ssh_cfg, addr, stop_cmd), kwargs=kwargs)
-    t.daemon = daemon
-    t.start()
-    return t
+        log("Command {} executed for {:.2f} seconds".format(process.name, duration))

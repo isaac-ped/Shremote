@@ -1,11 +1,13 @@
 import time
+import subprocess
 from .logger import *
-from checked_process import get_name_from_cmd, monitor_wait, \
-                            monitor_process, launch_process_monitor
+from .checked_process import get_name_from_cmd, monitor_wait, \
+                             monitor_process, CheckedProcessException
 try:
     from queue import Queue, Empty
 except:
     from Queue import Queue, Empty
+from threading import Thread
 
 class LocalProcessException(CheckedProcessException):
     pass
@@ -18,7 +20,7 @@ class LocalProcess(object):
     @staticmethod
     def monitor_stream(stream, queue):
         for line in iter(stream.readline, b''):
-            queue.put(line)
+            queue.put(line.decode('utf-8'))
 
     def log_from_queue(self, queue, label):
         while True:
@@ -33,9 +35,11 @@ class LocalProcess(object):
         self.name = name
         self.shell = shell
         self.exited = False
+        self.rtn_code = None
+        self.error_event = error_event
 
     def start(self):
-        self.proc = subprocess.Popen(args, stdout = subprocess.PIPE, stderr=subprocess.PIPE, 
+        self.proc = subprocess.Popen(self.args, stdout = subprocess.PIPE, stderr=subprocess.PIPE, 
                                      shell=self.shell, close_fds=True)
 
     def wait(self, seconds):
@@ -46,7 +50,15 @@ class LocalProcess(object):
         self.log_from_queue(self.stderr_q, "stderr")
         self.log_from_queue(self.stdout_q, "stdout")
 
-    def monitor(self):
+    def run_process_monitor(self, **kwargs):
+        try:
+            monitor_process(self, **kwargs)
+        except:
+            if self.error_event:
+                self.error_event.set()
+            raise
+
+    def monitor(self, **kwargs):
         self.stderr_q = Queue()
         self.stdout_q = Queue()
         self.stderr_thread = Thread(target = self.monitor_stream,
@@ -55,7 +67,10 @@ class LocalProcess(object):
         self.stdout_thread = Thread(target = self.monitor_stream,
                                     args = (self.proc.stderr, self.stderr_q))
         self.stdout_thread.start()
-        self.monitor_thread = launch_process_monitor(False, self, **kwargs)
+
+        self.monitor_thread = Thread(target = self.run_process_monitor,
+                                     kwargs=kwargs)
+        self.monitor_thread.start()
 
     def join(self):
         self.monitor_thread.join()
@@ -64,6 +79,7 @@ class LocalProcess(object):
         rtn_code = self.proc.poll()
         self.log_output()
         if rtn_code is not None:
+            self.rtn_code = rtn_code
             self.exited = True
             self.stderr_thread.join()
             self.stdout_thread.join()
@@ -76,7 +92,7 @@ class LocalProcess(object):
                     raise CheckedProcessException(self.args)
 
         return rtn_code
-    
+
     def force_stop(self):
         try:
             self.proc.terminate()
@@ -99,7 +115,7 @@ def start_local_process(cmd, error_event, shell = False, **kwargs):
 
     proc = LocalProcess(cmd, name, shell, error_event)
     proc.start()
-    proc.monitor()
+    proc.monitor(**kwargs)
 
     return proc
     
