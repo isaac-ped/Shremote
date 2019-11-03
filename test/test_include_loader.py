@@ -14,7 +14,8 @@ class TestLoader(unittest.TestCase):
 imported: !import sample_cfgs/includable.yml
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
+        with open('sample_cfgs/includable.yml') as f:
+            included_cfg = yaml.load(f, IncludeLoader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg)
 
@@ -23,7 +24,8 @@ imported: !import sample_cfgs/includable.yml
 imported: !import sample_cfgs/includable.yml::entry_one
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
+        with open('sample_cfgs/includable.yml') as f:
+            included_cfg = yaml.load(f, IncludeLoader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg['entry_one'])
 
@@ -32,7 +34,8 @@ imported: !import sample_cfgs/includable.yml::entry_one
 imported: !import sample_cfgs/includable.yml::entry_one::sub_key1
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
+        with open('sample_cfgs/includable.yml') as f:
+            included_cfg = yaml.load(f, IncludeLoader)
 
         self.assertEqual(raw_cfg['imported'], included_cfg['entry_one']['sub_key1'])
 
@@ -52,7 +55,8 @@ inherited: !inherit |
     sample_cfgs/includable.yml::entry_one
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
+        with open('sample_cfgs/includable.yml') as f:
+            included_cfg = yaml.load(f, IncludeLoader)
 
         self.assertEqual(raw_cfg['inherited'], included_cfg['entry_one'])
 
@@ -63,7 +67,8 @@ inherited: !inherit |
     sub_key2: new_value2
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
+        with open('sample_cfgs/includable.yml') as f:
+            included_cfg = yaml.load(f, IncludeLoader)
 
         self.assertEqual(raw_cfg['inherited']['sub_key1'],
                          included_cfg['entry_one']['sub_key1'])
@@ -79,7 +84,9 @@ inherited: !inherit |
         sub_key3: new_value3
 '''
         raw_cfg = yaml.load(cfg, IncludeLoader)
-        included_cfg = yaml.load(open('sample_cfgs/includable.yml'), IncludeLoader)
+        with open('sample_cfgs/includable.yml') as f:
+            included_cfg = yaml.load(f, IncludeLoader)
+
 
         self.assertEqual(raw_cfg['inherited']['entry_one']['sub_key1'],
                          included_cfg['entry_one']['sub_key1'])
