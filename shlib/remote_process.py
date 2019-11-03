@@ -1,9 +1,11 @@
+import paramiko
 from paramiko import SSHClient
 from .checked_process import get_name_from_cmd, monitor_wait, \
                               monitor_process, CheckedProcessException
 from .logger import *
 from threading import Thread
 import shlex
+import os
 
 class RemoteProccessException(CheckedProcessException):
     pass
@@ -85,7 +87,7 @@ def insert_exec(cmd):
     split_cmd = shlex.split(cmd)
     for i, part in enumerate(split_cmd[::-1], 1):
         if part in ('&&', '||', ';'):
-            split_cmd.insert(-i, 'exec')
+            split_cmd.insert((-i) + 1, 'exec')
             break
     else:
         split_cmd.insert(0, 'exec')
@@ -94,7 +96,15 @@ def insert_exec(cmd):
 def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwargs):
     client = SSHClient()
     client.load_system_host_keys()
-    client.connect(addr, username=ssh_cfg['user'].format(), port = ssh_cfg['port'].format())
+
+    try:
+        client.connect(addr,
+                        username=ssh_cfg['user'].format(),
+                        port = ssh_cfg['port'].format(),
+                        key_filename = os.path.expanduser(ssh_cfg['key'].format()))
+    except paramiko.ssh_exception.AuthenticationException:
+        log_error("Could not connect to {user}@{addr}:{port} with key {key}".format(addr=addr, **ssh_cfg))
+        raise
 
     with_exec = insert_exec(cmd)
     if name is None:
