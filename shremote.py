@@ -311,9 +311,12 @@ class ShCommand(object):
             if not proc.joined:
                 proc.join()
 
-    def exited(self):
+    def running(self):
         if not self.started:
-            return True
+            return False
+        return not self.exited()
+
+    def exited(self):
         if self.program.background:
             return self.stopped
         for proc in self.processes:
@@ -581,8 +584,26 @@ class ShRemote(object):
 
             if delay > 0:
                 log("Sleeping for %d" % delay)
-                if self.event.wait(delay):
-                    log_warn("Error encountered in other thread! Stopping execution")
+                errored = False
+                while delay > 0:
+                    if self.event.wait(1):
+                        log_warn("Error encountered in other thread! Stopping execution")
+                        errored = True
+                        break
+                    elapsed = time.time() - start_time
+                    delay = cmd_time - elapsed
+
+                    any_running = False
+                    for other_cmd in self.commands:
+                        if not other_cmd.exited():
+                            any_running = True
+                            break
+
+                    if not any_running:
+                        log_info("Nothing left running! Ending early.")
+                        break
+
+                if errored or not any_running:
                     break
 
             elif last_begin != time and delay > .1:
@@ -608,7 +629,7 @@ class ShRemote(object):
                 break
 
             for cmd in self.commands:
-                if not cmd.exited():
+                if cmd.running():
                     break
             else:
                 log("Commands done early")
@@ -616,7 +637,7 @@ class ShRemote(object):
 
         any_running = False
         for cmd in self.commands:
-            if not cmd.exited():
+            if cmd.running():
                 any_running = True
                 cmd.stop()
 
@@ -626,7 +647,7 @@ class ShRemote(object):
             time.sleep(.25)
             any_running = False
             for cmd in self.commands:
-                if not cmd.exited():
+                if cmd.running():
                     cmd.stop()
                     any_running = True
             stops_attempted+=1
@@ -636,11 +657,11 @@ class ShRemote(object):
 
         if do_kill:
             for cmd in self.commands:
-                if not cmd.exited():
+                if cmd.running():
                     cmd.stop(True)
             time.sleep(1)
             for cmd in self.commands:
-                if not cmd.exited():
+                if cmd.running():
                     log_warn("Program %s may still be running" % cmd.program.name)
 
 
