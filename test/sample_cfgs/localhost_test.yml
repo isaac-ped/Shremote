@@ -20,6 +20,12 @@ programs:
         log:
             dir: bgecho
 
+    long_sleep:
+        start: sleep 40
+        stop: kill {pid}
+        hosts: localhost
+
+
 computed_a: $( 15 + 2 )
 
 computed_b: $( 10 + 5 + {0.computed_a} )
@@ -32,3 +38,7 @@ commands:
     - program: bgecho
       begin: 5
       max_duration: 20
+
+    - program: long_sleep
+      begin: 0
+      max_duration: 10

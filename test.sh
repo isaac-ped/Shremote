@@ -1,3 +1,3 @@
 cd `dirname $0`/test/
-python test.py
+python3 test.py
 cd -
