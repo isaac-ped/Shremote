@@ -119,3 +119,11 @@ def start_local_process(cmd, error_event, shell = False, **kwargs):
 
     return proc
     
+def exec_locally(cmd, checked_rtn = 0, **kwargs):
+    p = start_local_process(cmd, error_event = None, checked_rtn = checked_rtn, **kwargs)
+    p.join()
+
+    if checked_rtn is not None and p.rtn_code != checked_rtn:
+        raise ShException("Cmd {} returned non-0 code {}".format(cmd, p.rtn_code))
+
+
