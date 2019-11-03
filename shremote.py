@@ -2,7 +2,8 @@
 
 from __future__ import print_function
 
-from shlib.checked_process import shell_call, start_shell_call, ssh_call, start_ssh_call
+from shlib.local_process import start_local_process
+from shlib.remote_process import start_remote_process
 from shlib.cfg_format import load_cfg
 from shlib.fmt_config import CfgFormatException
 from shlib.include_loader import IncludeLoader
@@ -10,6 +11,7 @@ from shlib.logger import * # log*(), set_logfile(), close_logfile()
 
 from shlib.cfg_format_v0 import likely_v0_cfg, load_v0_cfg
 
+from collections import namedtuple
 import re
 import threading # For threading.Event
 import argparse
@@ -19,9 +21,17 @@ import json
 import signal
 import itertools
 import textwrap
+import time
 
 class ShException(Exception):
     pass
+
+def exec_locally(cmd, checked_rtn = 0, **kwargs):
+    p = start_local_process(cmd, error_event = None, checked_rtn = checked_rtn, **kwargs)
+    p.join()
+
+    if checked_rtn is not None and p.rtn_code != checked_rtn:
+        raise ShException("Cmd {} returned non-0 code {}".format(cmd, p.rtn_code))
 
 class ShLocalCmd(object):
 
@@ -32,10 +42,9 @@ class ShLocalCmd(object):
 
     def execute(self):
         log_info("Executing %s" % self.cmd)
-        shell_call(self.cmd,
-                   shell = True, stop_event = self.event,
-                   checked_rtn = self.checked_rtn,
-                   )
+        p = start_local_process(self.cmd, stop_event = self.event, shell=True,
+                                checked_rtn = self.checked_rtn)
+        p.join()
 
 class ShHost(object):
 
@@ -66,28 +75,26 @@ class ShHost(object):
 
     def copy_from(self, src, dst, background=False):
         cmd = self.RSYNC_FROM_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
-        if background:
-            exec_fn = start_shell_call
-        else:
-            exec_fn = shell_call
-        return exec_fn(cmd, auto_shlex=True, checked_rtn = 0)
+        p = start_local_process(cmd, None, shell=True, checked_rtn = 0)
+        if not background:
+            p.join()
+        return p
 
     def copy_to(self, src, dst, background=False):
-        self.exec_cmd('mkdir -p %s' % os.path.dirname(dst), background=False, checked_rtn = 0)
+        p = start_local_process(['mkdir', '-p', dst], checked_rtn = 0)
+        p.join()
 
         cmd = self.RSYNC_TO_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
-        if background:
-            exec_fn = start_shell_call
-        else:
-            exec_fn = shell_call
-        return exec_fn(cmd, auto_shlex=True, checked_rtn = 0)
+        p = start_local_process(cmd, shell=True, checked_rtn = 0)
+        if not background:
+            p.join()
+        return p
 
-    def exec_cmd(self, start, event=None, background=True, **kwargs):
-        if background:
-            exec_fn = start_ssh_call
-        else:
-            exec_fn = ssh_call
-        return exec_fn(start, self.ssh, self.addr, stop_event = event, **kwargs)
+    def exec_cmd(self, cmd, event=None, background=True, log_entry = None, name = None, **kwargs):
+        proc = start_remote_process(cmd, self.ssh, self.addr, event, log_entry, name, **kwargs)
+        if not background:
+            proc.join()
+        return proc
 
 class ShFile(object):
 
@@ -181,8 +188,7 @@ class ShLog(object):
             if (host.addr, remote_out) in self.DIRS_COPIED:
                 continue
 
-            shell_call(["mkdir", "-p", local_dir],
-                       checked_rtn = 0, raise_error=True, stop_event = event)
+            exec_locally(["mkdir", "-p", local_dir])
 
             threads.append(host.copy_from(remote_out, local_dir, background=True))
 
@@ -213,9 +219,9 @@ class ShProgram(object):
                                  host = host.cfg) +\
                 self.log.suffix(host, host_idx)
 
-    def stop_cmd(self, host, host_idx):
+    def stop_cmd(self, host, host_idx, start_pid):
         if self.stop is not None:
-            return self.stop.format(host_idx = host_idx, host = host.cfg)
+            return self.stop.format(host_idx = host_idx, host = host.cfg, pid = start_pid)
         else:
             return None
 
@@ -229,6 +235,15 @@ class ShCommand(object):
         self.hosts = ShHost.create_host_list(cfg.hosts)
         self.max_duration = cfg.max_duration.format()
         self.min_duration = cfg.min_duration.format()
+        self.log_entries = []
+        self.processes = []
+        self.started = False
+        self.stopped = False
+
+        if self.max_duration is not None:
+            self.end = self.begin + self.max_duration
+        else:
+            self.end = None
 
         if self.min_duration and not self.program.shorter_error:
             log_warn("Min duration specified but shorter_duration_error is false for: {}"
@@ -268,7 +283,7 @@ class ShCommand(object):
                 raise
 
         try:
-            stop_cmd = self.program.stop_cmd(self.hosts[0], 0)
+            stop_cmd = self.program.stop_cmd(self.hosts[0], 0, 'pid')
         except KeyError as e:
             log_error("Error validating command %s: %s" % (self.program.stop.get_raw(), e))
             raise
@@ -285,67 +300,117 @@ class ShCommand(object):
     def cmd_text_iter(self):
         for i, host in enumerate(self.hosts):
             start_cmd = self.program.start_cmd(host, i)
-            stop_cmd = self.program.stop_cmd(host, i)
+            stop_cmd = self.program.stop_cmd(host, i, '__pid__')
             yield host, start_cmd, stop_cmd
 
+    def start_cmds(self):
+        for i, host in enumerate(self.hosts):
+            start_cmd = self.program.start_cmd(host, i)
+            yield host, start_cmd
+
+    def stop_cmds(self):
+        for i, (proc, host) in enumerate(zip(self.processes, self.hosts)):
+            stop_cmd = self.program.stop_cmd(host, i, proc.first_line)
+            yield host, proc, stop_cmd
+
+    def join(self):
+        for proc in self.processes:
+            if not proc.joined:
+                proc.join()
+
+    def exited(self):
+        if not self.started:
+            return True
+        if self.program.background:
+            return self.stopped
+        for proc in self.processes:
+            if not proc.exited:
+                return False
+        return True
+
+    def stop(self, kill_pid = False):
+        log("Attempting stop of", self.program.name)
+        for (host, proc, stop_cmd), log_entry in zip(self.stop_cmds(), self.log_entries):
+            cmd_name = "STOP %s on %s" % (self.program.name, host.name)
+            if not self.program.background and proc.exited:
+                log("Process %s already exited" % cmd_name)
+                proc.join()
+                continue
+
+            if kill_pid:
+                log("LAST ATTEMPT TO KILL %s" % cmd_name)
+                host.exec_cmd("kill -9 %s" % proc.first_line, background=False,
+                              name = cmd_name + "_KILL", log_end = False)
+            elif stop_cmd is not None:
+                host.exec_cmd(stop_cmd, background = False,
+                              name = cmd_name + "_stop", log_end = False)
+
+            if self.program.background:
+                log_entry['stop_time_'] = float(time.time())
+
+        self.stopped = True
+            # NOTE: Not joining process here - might need more time to shut down
+            # and don't want to block execution
+
     def start(self, log_entry):
-        threads = []
-        for host, start_cmd, stop_cmd in self.cmd_text_iter():
+        self.started = True
+        max_dur = None if self.program.stop is not None else self.max_duration
+        for host, start_cmd in self.start_cmds():
+            cmd_name = "%s on %s" % (self.program.name, host.name)
             host_log_entry = {}
 
             host_log_entry['addr_'] = host.addr
             host_log_entry['start_'] = start_cmd
-            host_log_entry['stop_'] = stop_cmd
             host_log_entry['time_'] = float(time.time())
 
-            log_info("Executing on %s : %s" % (host.addr, start_cmd))
+            log_info("Executing %s : %s" % (cmd_name, start_cmd))
             if not self.program.background:
-                t = host.exec_cmd(start_cmd, self.event,
-                                  background=True, daemon=True,
-                                  stop_cmd = stop_cmd,
+                p = host.exec_cmd(start_cmd, self.event,
+                                  background=True, log_entry = host_log_entry,
+                                  name = cmd_name,
                                   min_duration = self.min_duration,
-                                  max_duration = self.max_duration,
-                                  duration_exceeded_error = self.program.longer_error,
+                                  max_duration = max_dur,
                                   checked_rtn = self.program.checked_rtn,
                                   log_end = True)
-                threads.append(t)
             else:
-                start_name = start_cmd.split()[0]
-                t = host.exec_cmd(start_cmd, self.event,
-                                  background=True, daemon=True,
-                                  checked_rtn = self.program.checked_rtn, max_duration = self.max_duration,
+                p = host.exec_cmd(start_cmd, self.event,
+                                  background=False,
+                                  name = cmd_name,
+                                  checked_rtn = self.program.checked_rtn,
+                                  max_duration = max_dur,
                                   log_end = True)
-                threads.append(t)
-
-                sleep_stop_cmd = 'sleep {}; {}'.format(self.max_duration, stop_cmd)
-                stop_sleep_cmd = 'pkill sleep'
-                t = host.exec_cmd(sleep_stop_cmd, self.event,
-                                  background=True, daemon=True,
-                                  stop_cmd = stop_sleep_cmd,
-                                  min_duration = self.max_duration,
-                                  max_duration = self.max_duration + 1,
-                                  log_end = True, name = 'stop %s' % start_name)
-                threads.append(t)
+            self.processes.append(p)
 
             host_log_entry.update(self.raw())
+            self.log_entries.append(host_log_entry)
             log_entry.append(host_log_entry)
-
-        return threads
 
 class ShRemote(object):
 
+    CommandInstance = namedtuple("cmd_instance", ["time", "is_stop", "cmd"])
+
     def sigint_handler(self, signal, frame):
-        log_error("CTRL+C PRESSED!")
-        self.event.set()
+        if self.interrupts_attempted == 0:
+            log_error("CTRL+C PRESSED!")
+            self.event.set()
+        if self.interrupts_attempted == 1:
+            log_error("CTRL+C PRESSED AGAIN!")
+            log_warn("Interrupt one more time to skip waiting for processes to finish")
+        if self.interrupts_attempted ==2 :
+            log_error("CTRL+C PRESSED AGAIN! Processes may now be left running!!!")
+        if self.interrupts_attempted > 2:
+            log_error("CTRL+C PRESSED EVEN MORE! BE PATIENT!")
+        self.interrupts_attempted += 1
 
     def __init__(self, cfg_file, label, out_dir, args_dict, suppress_output):
         self.event = threading.Event()
+        self.interrupts_attempted = 0
         signal.signal(signal.SIGINT, self.sigint_handler)
 
         self.output_dir = os.path.join(out_dir, label, '')
         log("Making output directory: %s" % self.output_dir)
         if not suppress_output:
-            shell_call('mkdir -p "%s"' % self.output_dir, auto_shlex=True, checked_rtn = 0)
+            exec_locally(['mkdir', '-p', self.output_dir])
             set_logfile(os.path.join(self.output_dir, 'shremote.log'))
         log("Made output dir")
 
@@ -372,8 +437,16 @@ class ShRemote(object):
         self.label = label
 
 
-        commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
-        self.commands = sorted(commands, key = lambda cmd: cmd.begin)
+        self.commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
+        self.commands = sorted(self.commands, key = lambda cmd: cmd.begin)
+
+        self.command_instances = []
+        for command in self.commands:
+            self.command_instances.append(self.CommandInstance(command.begin, False, command))
+            if command.end is not None:
+                self.command_instances.append(self.CommandInstance(command.end, True, command))
+
+        self.command_instances = sorted(self.command_instances, key = lambda cmd: cmd.time)
 
         self.init_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('init_cmds', [])]
         self.post_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('post_cmds', [])]
@@ -471,10 +544,10 @@ class ShRemote(object):
         if event.is_set():
             log_error("Error encountered getting logs!")
 
-        shell_call(['cp', self.cfg_file, self.output_dir], raise_error=True)
-        shell_call(['cp', self.cfg_file, os.path.join(self.output_dir, 'shremote_cfg.yml')], raise_error=True)
+        exec_locally(['cp', self.cfg_file, self.output_dir])
+        exec_locally(['cp', self.cfg_file, os.path.join(self.output_dir, 'shremote_cfg.yml')])
         for filename in set(IncludeLoader.included_files):
-            shell_call(['cp', filename, self.output_dir], raise_error=True)
+            exec_locally(['cp', filename, self.output_dir])
 
         with open(os.path.join(self.output_dir, 'event_log.json'), 'w') as f:
             json.dump(self.event_log, f, indent=2)
@@ -509,32 +582,74 @@ class ShRemote(object):
         last_begin = 0
         max_end = 0
 
-        for cmd in self.commands:
+        for cmd_time, is_stop, cmd in self.command_instances:
             elapsed = time.time() - start_time
-            delay = cmd.begin - elapsed
+            delay = cmd_time - elapsed
 
             if delay > 0:
                 log("Sleeping for %d" % delay)
                 if self.event.wait(delay):
-                    log_error("Error encountered in other thread! Stopping execution")
-                    return
-            elif last_begin != cmd.begin and delay > .1:
+                    log_warn("Error encountered in other thread! Stopping execution")
+                    break
+
+            elif last_begin != time and delay > .1:
                 log_warn("Falling behind on execution by %.1f s" % delay)
 
-            last_begin = cmd.begin
-            cmd.start(self.event_log)
+            last_begin = cmd_time
 
-            print("MAX DUR", cmd.max_duration)
-            print("MIN DUR", cmd.min_duration)
+            if is_stop:
+                cmd.stop()
+            else:
+                cmd.start(self.event_log)
+
             max_end = max(max_end, cmd.begin + \
                                     max(cmd.max_duration if cmd.max_duration is not None else 0,
                                         cmd.min_duration if cmd.min_duration is not None else 0))
 
         elapsed = time.time() - start_time
         delay = max_end - elapsed
-        if self.event.wait(delay):
-            log_error("Error encountered in other thread during final wait period!")
+        while (delay > 0):
+            if self.event.wait(1):
+                log_warn("Error encountered in other thread during final wait period!")
+                time.sleep(1)
+                break
+
+            for cmd in self.commands:
+                if not cmd.exited():
+                    break
+            else:
+                log("Commands done early")
+                break
+
+        any_running = False
+        for cmd in self.commands:
+            if not cmd.exited():
+                any_running = True
+                cmd.stop()
+
+        stops_attempted = 0
+        do_kill = False
+        while any_running and self.interrupts_attempted <= 1:
+            time.sleep(.25)
+            any_running = False
+            for cmd in self.commands:
+                if not cmd.exited():
+                    cmd.stop()
+                    any_running = True
+            stops_attempted+=1
+            if stops_attempted > 20:
+                do_kill = True
+                break
+
+        if do_kill:
+            for cmd in self.commands:
+                if not cmd.exited():
+                    cmd.stop(True)
             time.sleep(1)
+            for cmd in self.commands:
+                if not cmd.exited():
+                    log_warn("Program %s may still be running" % cmd.program.name)
+
 
     def stop(self):
         self.event.set()

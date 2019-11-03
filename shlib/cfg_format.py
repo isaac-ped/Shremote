@@ -80,6 +80,7 @@ class CommandsCfg(CfgMapList):
     _computed_fields = [
             CfgField('host_idx', int),
             CfgField('host', lambda : defaultdict(str)),
+            CfgField('pid', int)
     ]
 
     _child_inherit = ['program', 'defaults']
