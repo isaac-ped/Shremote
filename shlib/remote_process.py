@@ -24,6 +24,7 @@ class RemoteProcess(object):
         self.monitor_thread = None
         self.first_line = None
         self.log_entry = log_entry
+        log(cmd)
 
     def wait(self, seconds):
         if monitor_wait(self.error_event, seconds) :
@@ -84,13 +85,18 @@ class RemoteProcess(object):
 
 
 def insert_exec(cmd):
-    split_cmd = shlex.split(cmd)
-    for i, part in enumerate(split_cmd[::-1], 1):
-        if part in ('&&', '||', ';'):
-            split_cmd.insert((-i) + 1, 'exec')
-            break
-    else:
+    parts = shlex.split(cmd, posix=False)
+    split_cmd = []
+    inserted = False
+    for i, part in enumerate(parts[::-1], 1):
+        if not inserted and part in ('&&', '||', ';'):
+            split_cmd.insert(0, 'exec')
+            inserted=True
+        split_cmd.insert(0, part)
+
+    if not inserted:
         split_cmd.insert(0, 'exec')
+
     return 'echo $$ && ' + ' '.join(split_cmd)
 
 def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwargs):
