@@ -273,7 +273,7 @@ Specifies programs to be executed on remote hosts.
   * `hosts`: Host(s) (or references to host(s)) on which the program should be executed.
   Optional, and overridden by `hosts` in a `command` (if present).
   * `start`: The shell command used to start this program
-  * `stop`: (optional) The shell command used to stop this program, if it is to run in the background, or to be stopped prematurely.
+  * `stop`: (optional) The shell command used to stop this program. `kill {pid}` will often be appropriate.
   * `duration_reduced_error`: (optional) If `true`, shremote will throw an error if the program executes for shorter than the command's `min_duration`. Defaults to `true`.
   * `duration_exceeded_error`: (optional) If `true`, shremote will throw an error if the program lasts longer than the command's `max_duration`. Defaults to `false`.
   * `bg`: (optional) If `true`, the command will run in the background, and will have to be manually stopped with the `stop` command
@@ -298,6 +298,7 @@ Specifies when and where to execute commands
   * `host_idx`: If executing on multiple hosts, the index of the currently-executing host
   * `log_dir`: The full path to the log directory for this program (including `<program>.log.dir`) on the active host.
   * `host`: If executing on multiple hosts, the config map of the host on which the command is currently being executed
+  * `pid`: The process ID of the running command, once started. To be used in the "stop" section of a program.
 
 ##### Root-level computed fields
 These fields are available with `{0.<field>}` throughout the config
