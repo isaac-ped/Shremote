@@ -71,6 +71,7 @@ class CommandsCfg(CfgMapList):
             CfgField('begin', float, required=True),
             CfgField('min_duration', [float, NullType], default=None),
             CfgField('max_duration', [float, NullType], default=None),
+            CfgField('enabled', bool, default=True)
     ]
 
     _reserved_fields = [

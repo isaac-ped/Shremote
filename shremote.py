@@ -443,7 +443,7 @@ class ShRemote(object):
         self.label = label
 
 
-        self.commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands]
+        self.commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands if cmd.enabled.format()]
         self.commands = sorted(self.commands, key = lambda cmd: cmd.begin)
 
         self.command_instances = []
