@@ -74,11 +74,11 @@ class ShHost(object):
         return p
 
     def copy_to(self, src, dst, background=False):
-        p = start_local_process(['mkdir', '-p', dst], checked_rtn = 0)
+        p = start_local_process(['mkdir', '-p', dst], None, shell=False, checked_rtn = 0)
         p.join()
 
         cmd = self.RSYNC_TO_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
-        p = start_local_process(cmd, shell=True, checked_rtn = 0)
+        p = start_local_process(cmd, None, shell=True, checked_rtn = 0)
         if not background:
             p.join()
         return p
@@ -652,7 +652,7 @@ class ShRemote(object):
 
         stops_attempted = 0
         do_kill = False
-        while any_running and self.interrupts_attempted <= 1:
+        while any_running and self.interrupts_attempted <= 2:
             time.sleep(.25)
             any_running = False
             for cmd in self.commands:
@@ -673,7 +673,6 @@ class ShRemote(object):
                 if cmd.running():
                     log_warn("Program %s may still be running" % cmd.program.name)
 
-
     def stop(self):
         self.event.set()
 
@@ -687,6 +686,7 @@ class ShRemote(object):
 
         log_info("Done with test!")
         close_logfile()
+        return self.event.is_set()
 
 
 def main():
@@ -722,8 +722,8 @@ def main():
     else:
         if args.delete_remote:
             shremote.delete_remote_logs()
-        shremote.run()
+        return shremote.run()
 
 
 if __name__ == '__main__':
-    main()
+    exit(main())
