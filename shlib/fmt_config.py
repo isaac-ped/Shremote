@@ -395,6 +395,11 @@ class FmtConfig(object):
         def hasarg(key):
             return key in self.__root['args']
 
+        def passarg(key):
+            if key not in self.__root['args']:
+                return ''
+            return " --{} '{}' ".format(key, self.__root['args'][key])
+
         if not isinstance(value, str):
             return value
         eval_grp = self.innermost_exec_str(value)
