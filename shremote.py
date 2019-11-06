@@ -12,6 +12,7 @@ from shlib.logger import * # log*(), set_logfile(), close_logfile()
 from shlib.cfg_format_v0 import likely_v0_cfg, load_v0_cfg
 
 from collections import namedtuple
+import sys
 import re
 import threading # For threading.Event
 import argparse
@@ -688,6 +689,14 @@ class ShRemote(object):
         close_logfile()
         return self.event.is_set()
 
+def parse_unknown_args(args):
+    parser = argparse.ArgumentParser()
+    _, new_args = parser.parse_known_args(args)
+    for arg in new_args:
+        if arg.startswith(('-', '--')):
+            parser.add_argument(arg, type=str)
+    new_args = parser.parse_args(args)
+    return vars(new_args)
 
 def main():
     parser = argparse.ArgumentParser(description="Schedule remote commands over SSH")
@@ -700,15 +709,21 @@ def main():
     parser.add_argument('--args', type=str, required=False,
                         help="Additional arguments which are passed to the config file (format 'k1:v1;k2:v2')")
 
-    args = parser.parse_args()
+    if '--' in sys.argv:
+        argv = sys.argv[1:sys.argv.index('--')]
+        other_args = parse_unknown_args(sys.argv[sys.argv.index('--')+1:])
+    else:
+        argv = sys.argv[1:]
+        other_args = {}
 
-    sh_args = {}
+    args = parser.parse_args(argv)
+
     if args.args is not None:
         for entry in args.args.split(';'):
             k, v = entry.split(":")
-            sh_args[k] = v
+            other_args[k] = v
 
-    shremote = ShRemote(args.cfg_file, args.label, args.out, sh_args, args.parse_test)
+    shremote = ShRemote(args.cfg_file, args.label, args.out, other_args, args.parse_test)
 
     if args.parse_test:
         shremote.show_args()
