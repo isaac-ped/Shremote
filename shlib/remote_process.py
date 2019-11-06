@@ -24,7 +24,6 @@ class RemoteProcess(object):
         self.monitor_thread = None
         self.first_line = None
         self.log_entry = log_entry
-        log(cmd)
 
     def wait(self, seconds):
         if monitor_wait(self.error_event, seconds) :
@@ -113,6 +112,9 @@ def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwa
         raise
 
     with_exec = insert_exec(cmd)
+
+    log(addr, ":", with_exec)
+
     if name is None:
         name = get_name_from_cmd(cmd)
 
