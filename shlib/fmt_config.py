@@ -387,11 +387,17 @@ class FmtConfig(object):
             raise BadExecException("Cannot find end of exec string: {}".format(st[last_match_idx:]))
         return st[start_idx:end_idx+1]
 
-    @classmethod
-    def do_eval(cls, value):
+    def do_eval(self, value):
+
+        def getarg(key, default=None):
+            return self.__root['args'].get(key, default).format()
+
+        def hasarg(key):
+            return key in self.__root['args']
+
         if not isinstance(value, str):
             return value
-        eval_grp = cls.innermost_exec_str(value)
+        eval_grp = self.innermost_exec_str(value)
         while eval_grp is not None:
             # Cut off the starting $, leaving (...)
             to_eval = eval_grp[1:]
@@ -400,7 +406,7 @@ class FmtConfig(object):
             except Exception as e:
                 raise CfgFormatException("Error raised while evaluating {}: {}".format(to_eval, e))
             value = value.replace(eval_grp, rep_with)
-            eval_grp = cls.innermost_exec_str(value)
+            eval_grp = self.innermost_exec_str(value)
         return value
 
     def format(self, _strip_escaped_eval = True, _check_computed = True, **kwargs):
