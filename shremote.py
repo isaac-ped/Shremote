@@ -690,13 +690,17 @@ class ShRemote(object):
         return self.event.is_set()
 
 def parse_unknown_args(args):
-    parser = argparse.ArgumentParser()
-    _, new_args = parser.parse_known_args(args)
-    for arg in new_args:
-        if arg.startswith(('-', '--')):
-            parser.add_argument(arg, type=str)
-    new_args = parser.parse_args(args)
-    return vars(new_args)
+    new_args = {}
+    key = None
+    value = None
+    for arg in args:
+        if arg.startswith('--'):
+            key = arg.strip('--')
+            new_args[key] = None
+        else:
+            new_args[key] = arg
+
+    return new_args
 
 def main():
     parser = argparse.ArgumentParser(description="Schedule remote commands over SSH")
