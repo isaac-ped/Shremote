@@ -124,7 +124,7 @@ class ShLog(object):
 
     def __init__(self, cfg):
         self.subdir = cfg.dir
-        self.do_append = cfg.append
+        self.do_append = cfg.append.format()
 
         if 'out' in cfg:
             self.out = cfg.out
