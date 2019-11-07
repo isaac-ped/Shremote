@@ -45,6 +45,8 @@ class LocalProcess(object):
     def wait(self, seconds):
         if monitor_wait(self.error_event, seconds) :
             log_warn("Error encountered in other thread while executing %s" % self.name)
+            return True
+        return False
 
     def log_output(self):
         self.log_from_queue(self.stderr_q, "stderr")

@@ -67,8 +67,8 @@ class ShHost(object):
     def __hash__(self):
         return hash(self.addr + self.log_dir)
 
-    def copy_from(self, src, dst, background=False):
-        p = start_local_process(['mkdir', '-p', os.path.expanduser(dst)], None, shell=False, checked_rtn = 0)
+    def copy_from(self, src, dst, background=False, event=None):
+        p = start_local_process(['mkdir', '-p', os.path.expanduser(dst)], event, shell=False, checked_rtn = 0)
         p.join()
 
         cmd = self.RSYNC_FROM_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
@@ -77,9 +77,9 @@ class ShHost(object):
             p.join()
         return p
 
-    def copy_to(self, src, dst, background=False):
+    def copy_to(self, src, dst, background=False, event=None):
         cmd = self.RSYNC_TO_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
-        p = start_local_process(cmd, None, shell=True, checked_rtn = 0)
+        p = start_local_process(cmd, event, shell=True, checked_rtn = 0)
         if not background:
             p.join()
         return p
@@ -113,12 +113,12 @@ class ShFile(object):
                 log_error("Error formatting dest of file {}: {}".format(self.name, e))
                 raise
 
-    def copy_to_host(self):
+    def copy_to_host(self, event=None):
         for host in self.hosts:
             src = self.cfg_src.format(host = host.cfg)
             dst = self.cfg_dst.format(host = host.cfg)
             log_info("Copying {} to host {}".format(src, host.name))
-            host.copy_to(src, dst, background=False)
+            host.copy_to(src, dst, background=False, event=event)
 
 class ShLog(object):
 
@@ -500,7 +500,7 @@ class ShRemote(object):
 
     def copy_files(self):
         for file in self.files:
-            file.copy_to_host()
+            file.copy_to_host(self.event)
 
     def delete_remote_logs(self):
         remote_dirs = set()
