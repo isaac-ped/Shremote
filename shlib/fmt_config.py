@@ -2,6 +2,7 @@ import copy
 import re
 import pprint
 import os
+import ast
 from .logger import log_warn
 from collections import defaultdict
 
@@ -412,6 +413,7 @@ class FmtConfig(object):
                 raise CfgFormatException("Error raised while evaluating {}: {}".format(to_eval, e))
             value = value.replace(eval_grp, rep_with)
             eval_grp = self.innermost_exec_str(value)
+
         return value
 
     def format(self, _strip_escaped_eval = True, _check_computed = True, **kwargs):
@@ -467,6 +469,10 @@ class FmtConfig(object):
             evaled = self.do_eval(formatted)
             if self.__types is not None:
                 casted = False
+                try:
+                    evaled = ast.literal_eval(evaled)
+                except:
+                    pass
                 for __type in self.__types:
                     try:
                         evaled = __type(evaled)

@@ -33,6 +33,7 @@ class FilesCfg(CfgMapMap):
             CfgField('src', str, required=True),
             CfgField('dst', str, required=True),
             CfgField('name', str, aliases='_name'),
+            CfgField('enabled', bool, default=True),
             CfgReference('hosts', HostsCfg, list_ok = True, required=True, aliases=('host'))
     ]
     _computed_fields = [

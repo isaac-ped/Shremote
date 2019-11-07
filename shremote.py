@@ -117,6 +117,7 @@ class ShFile(object):
         for host in self.hosts:
             src = self.cfg_src.format(host = host.cfg)
             dst = self.cfg_dst.format(host = host.cfg)
+            log_info("Copying {} to host {}".format(src, host.name))
             host.copy_to(src, dst, background=False)
 
 class ShLog(object):
@@ -413,7 +414,7 @@ class ShRemote(object):
         self.interrupts_attempted = 0
         signal.signal(signal.SIGINT, self.sigint_handler)
 
-        self.output_dir = os.path.join(out_dir, label, '')
+        self.output_dir = os.path.expanduser(os.path.join(out_dir, label, ''))
         log("Making output directory: %s" % self.output_dir)
         if not suppress_output:
             exec_locally(['mkdir', '-p', self.output_dir])
@@ -461,7 +462,8 @@ class ShRemote(object):
 
         self.files = []
         for cfg in self.cfg.get('files', {}).values():
-            self.files.append(ShFile(cfg, self.output_dir))
+            if cfg.enabled.format():
+                self.files.append(ShFile(cfg, self.output_dir))
 
     def show_args(self):
         required_args = set()
