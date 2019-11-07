@@ -610,7 +610,7 @@ class ShRemote(object):
 
                     any_running = False
                     for other_cmd in self.commands:
-                        if not other_cmd.exited():
+                        if (not other_cmd.started) or (not other_cmd.exited()):
                             any_running = True
                             break
 
