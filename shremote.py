@@ -266,6 +266,9 @@ class ShCommand(object):
             del self_dict['program']['host']
         return self_dict
 
+    def formatted(self, host, host_idx):
+        return self.cfg.format_tree(host=host.cfg, host_idx=host_idx, pid='__pid__')
+
     def pformat(self):
         return pprint.pformat(self.raw())
 
@@ -362,7 +365,7 @@ class ShCommand(object):
     def start(self, log_entry):
         self.started = True
         max_dur = None if self.program.stop is not None else self.max_duration
-        for host, start_cmd in self.start_cmds():
+        for i, (host, start_cmd) in enumerate(self.start_cmds()):
             cmd_name = "%s on %s" % (self.program.name, host.name)
             host_log_entry = {}
 
@@ -388,7 +391,7 @@ class ShCommand(object):
                                   log_end = True)
             self.processes.append(p)
 
-            host_log_entry.update(self.raw())
+            host_log_entry.update(self.formatted(host, i))
             self.log_entries.append(host_log_entry)
             log_entry.append(host_log_entry)
 

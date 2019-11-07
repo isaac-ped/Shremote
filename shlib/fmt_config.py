@@ -7,7 +7,10 @@ from .logger import log_warn
 from collections import defaultdict
 
 class CfgKeyError(KeyError):
-    pass
+
+    def __init__(self, base_msg, *args, **kwargs):
+        super(KeyError, self).__init__(*args, **kwargs)
+        self.base_msg = base_msg
 
 class CfgFormatException(Exception):
     pass
@@ -416,6 +419,25 @@ class FmtConfig(object):
 
         return value
 
+    def format_tree(self, **kwargs):
+        if self.__leaf:
+            try:
+                return self.format(**kwargs)
+            except CfgKeyError as e:
+                return str(self.get_raw()) + ' ({})'.format(e.base_msg)
+
+        if self.is_map():
+            rtn = {}
+            for k, v in self.items():
+                rtn[k] = v.format_tree(**kwargs)
+            return rtn
+
+        if self.is_list():
+            rtn = []
+            for v in self:
+                rtn.append(v.format_tree(**kwargs))
+            return rtn
+
     def format(self, _strip_escaped_eval = True, _check_computed = True, **kwargs):
         if not self.__formattable:
             return self.get_raw()
@@ -461,7 +483,7 @@ class FmtConfig(object):
 
                         except Exception as e2:
                             self.__format_kwargs.disable_computed_fields()
-                    raise CfgKeyError("Error formatting {} ({}): {}".format(self.__name, formatted, e1.args[0]))
+                    raise CfgKeyError(e1.args[0], "Error formatting {} ({}): {}".format(self.__name, formatted, e1.args[0]))
                 try:
                     formatted = self.do_eval(formatted)
                 except:
