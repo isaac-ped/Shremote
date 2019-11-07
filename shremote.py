@@ -68,6 +68,9 @@ class ShHost(object):
         return hash(self.addr + self.log_dir)
 
     def copy_from(self, src, dst, background=False):
+        p = start_local_process(['mkdir', '-p', os.path.expanduser(dst)], None, shell=False, checked_rtn = 0)
+        p.join()
+
         cmd = self.RSYNC_FROM_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
         p = start_local_process(cmd, None, shell=True, checked_rtn = 0)
         if not background:
@@ -75,9 +78,6 @@ class ShHost(object):
         return p
 
     def copy_to(self, src, dst, background=False):
-        p = start_local_process(['mkdir', '-p', dst], None, shell=False, checked_rtn = 0)
-        p.join()
-
         cmd = self.RSYNC_TO_CMD.format(src = src, dst = dst, addr = self.addr, ssh = self.ssh)
         p = start_local_process(cmd, None, shell=True, checked_rtn = 0)
         if not background:
