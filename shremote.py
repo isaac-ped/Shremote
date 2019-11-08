@@ -513,7 +513,7 @@ class ShRemote(object):
 
         if self.event.wait(5):
             log_error("Interrupted while pausing before deletion. Cancelled.")
-            return 
+            return
 
         threads = []
         for host, remote_dir in remote_dirs:
