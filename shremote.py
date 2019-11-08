@@ -511,18 +511,19 @@ class ShRemote(object):
         for host, remote_dir in remote_dirs:
             log_info("%s: %s" % (host.addr, remote_dir))
 
-        time.sleep(5)
+        if self.event.wait(5):
+            log_error("Interrupted while pausing before deletion. Cancelled.")
+            return 
 
         threads = []
-        event = threading.Event()
         for host, remote_dir in remote_dirs:
             del_cmd = 'rm -rf %s' % remote_dir
-            threads.append(host.exec_cmd(del_cmd, event=event, background=True, checked_rtn = 0))
+            threads.append(host.exec_cmd(del_cmd, event=self.event, background=True, checked_rtn = 0))
 
         for thread in threads:
             thread.join()
 
-        if event.is_set():
+        if self.event.is_set():
             log_error("Error deleting remote logs!")
 
     def mk_remote_dirs(self):
@@ -746,6 +747,8 @@ def main():
     else:
         if args.delete_remote:
             shremote.delete_remote_logs()
+            if shremote.event.is_set():
+                exit(1)
         return shremote.run()
 
 
