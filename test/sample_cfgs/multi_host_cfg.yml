@@ -1,6 +1,6 @@
 hosts:
     multi:
-        addr: [a, b]
+        hostname: [a, b]
 
     single:
         addr: c
