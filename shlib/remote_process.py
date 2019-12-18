@@ -6,6 +6,7 @@ from .logger import *
 from threading import Thread
 import shlex
 import os
+import socket
 
 class RemoteProccessException(CheckedProcessException):
     pass
@@ -107,8 +108,11 @@ def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwa
                         username=ssh_cfg['user'].format(),
                         port = ssh_cfg['port'].format(),
                         key_filename = os.path.expanduser(ssh_cfg['key'].format()))
-    except paramiko.ssh_exception.AuthenticationException:
+    except (paramiko.ssh_exception.AuthenticationException, socket.gaierror):
         log_error("Could not connect to {user}@{addr}:{port} with key {key}".format(addr=addr, **ssh_cfg))
+        raise
+    except Exception as e:
+        log_error("Unknown error connecting  to {user}@{addr}:{port} with key {key}".format(addr=addr, **ssh_cfg))
         raise
 
     with_exec = insert_exec(cmd)
