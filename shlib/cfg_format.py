@@ -23,6 +23,7 @@ class HostsCfg(CfgMapMap):
             CfgField('name', str, aliases='_name'),
             CfgMap('ssh', inherit=SshCfg),
             CfgField('log_dir', str, default="{0.log_dir}"),
+            CfgField('enabled', bool, default=True)
     ]
     _reserved_fields = [
             CfgField('output_dir', str, default="$(os.path.join('{host.log_dir}', '{0.label}'))")
