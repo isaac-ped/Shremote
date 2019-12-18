@@ -410,6 +410,12 @@ class FmtConfig(object):
         while eval_grp is not None:
             # Cut off the starting $, leaving (...)
             to_eval = eval_grp[1:]
+
+            # If it's the only thing in the value, it may return a non-string
+            if value.find(eval_grp) == 0 and len(eval_grp) == len(value):
+                return eval(to_eval)
+
+            # Otherwise, it must return a string
             try:
                 rep_with = str(eval(to_eval))
             except Exception as e:
@@ -447,14 +453,14 @@ class FmtConfig(object):
                             .format(self.__name, self.__raw))
 
         if not self.__leaf:
-            return self.get_raw()
+            return self
 
         if isinstance(self.__raw, str):
             if _strip_escaped_eval:
                 self.set_format_kwargs(kwargs)
             formatted = self.__raw
             # Search for { which is not followed or preceeded by {
-            while re.search('(?<!{){[^{]', formatted) is not None:
+            while isinstance(formatted, str) and re.search('(?<!{){[^{]', formatted) is not None:
                 try:
                     if isinstance(formatted, str):
                         formatted = formatted.format(self.__root, **self.__format_kwargs)
