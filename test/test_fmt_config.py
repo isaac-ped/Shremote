@@ -22,7 +22,7 @@ ten: $({0.x} * 2)
         self.assertEqual(x, 'a'*5)
 
         x = cfg.formatted("ten")
-        self.assertEqual(x, '10')
+        self.assertEqual(x, 10)
 
     def test_no_eval_format(self):
         no_eval_cfg = '''
