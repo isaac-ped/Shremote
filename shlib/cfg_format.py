@@ -19,7 +19,8 @@ class CmdsCfg(CfgMapList):
 
 class HostsCfg(CfgMapMap):
     _fields = [
-            CfgField('hostname', str, required=True, aliases=('addr'), list_ok=True),
+            CfgField('hostname', None, required=True, aliases=('addr')),
+            #FIXME: to enable $(...) expanding to a list, hostname cannot set list_ok
             CfgField('name', str, aliases='_name'),
             CfgMap('ssh', inherit=SshCfg),
             CfgField('log_dir', str, default="{0.log_dir}"),

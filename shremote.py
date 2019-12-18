@@ -36,7 +36,7 @@ class ShLocalCmd(object):
 
     def execute(self):
         log_info("Executing %s" % self.cmd)
-        p = start_local_process(self.cmd, stop_event = self.event, shell=True,
+        p = start_local_process(self.cmd, self.event, shell=True,
                                 checked_rtn = self.checked_rtn)
         p.join()
 
@@ -50,12 +50,24 @@ class ShHost(object):
 
     @classmethod
     def create_host_list(cls, cfg_hosts):
-        hosts = [cls(h) for h in cfg_hosts]
+        hosts = []
+        for host in cfg_hosts:
+            if host.enabled.format():
+                hostname = host.hostname.format()
+                # TODO: This is a consequence of the fact that if list_ok is true,
+                # the formatter will wrap the first element in a list, regardless
+                # of whether it will expand to a list when formatted.
+                # Thus, list_ok cannot be true for hostname, which may be evaluated
+                # dynamically
+                if isinstance(hostname, str):
+                    hosts.append(cls(host, hostname))
+                else:
+                    hosts.extend([cls(host, name.format()) for name in hostname])
         return hosts
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, hostname):
         self.name = cfg.name.format()
-        self.addr = cfg.addr.format()
+        self.addr = hostname
         self.ssh = cfg.ssh
         self.cfg = cfg
         label = cfg.get_root().label.format()
@@ -95,6 +107,9 @@ class ShFile(object):
     def __init__(self, cfg, local_out):
         self.name = cfg.name.format()
         self.hosts = ShHost.create_host_list(cfg.hosts)
+        if len(self.hosts) == 0:
+            log_error("File %s is to be uploaded to only disabled hosts" % self.name)
+            raise ShException("No enabled hosts")
         self.local_out = os.path.join(local_out, cfg.get_root().label.format())
         self.cfg_src = cfg.src
         self.cfg_dst = cfg.dst
@@ -138,19 +153,22 @@ class ShLog(object):
         else:
             self.err = None
 
-    def assert_no_overlap(self, other):
+    def assert_no_overlap(self, other, self_host, other_host):
         if self.do_append and other.do_append:
             return
 
-        if not self.subdir.format(host_idx=0) == other.subdir.format(host_idx=0):
+        if not self.subdir.format(host_idx=0, host=self_host) == \
+                other.subdir.format(host_idx=0, host=other_host):
             return
 
         if self.out is not None:
-            if self.out.format(host_idx=0) == other.out.format(host_idx=0):
+            if self.out.format(host_idx=0, host=self_host) == \
+                    other.out.format(host_idx=0, host=other_host):
                 raise ShException("Overlapping output log file: {}".format(self.out.format(host_idx=0)))
 
         if self.err is not None:
-            if self.err.format(host_idx=0) == other.err.format(host_idx=0):
+            if self.err.format(host_idx=0, host = self_host) == \
+                    other.err.format(host_idx=0, host = other_host):
                 raise ShException("Overlapping error log file: {}".format(self.err.format(host_idx=0)))
 
     def log_dir(self, host, host_idx):
@@ -237,6 +255,9 @@ class ShCommand(object):
         self.begin = cfg.begin.format()
         self.program = ShProgram(cfg.program)
         self.hosts = ShHost.create_host_list(cfg.hosts)
+        if len(self.hosts) == 0:
+            log_error("Hosts for command %s are all disabled" % self.program.name)
+            raise ShException("No enabled hosts")
         self.max_duration = cfg.max_duration.format()
         self.min_duration = cfg.min_duration.format()
         self.log_entries = []
@@ -274,7 +295,7 @@ class ShCommand(object):
 
     def check_overlapping_logs(self, other):
         try:
-            self.program.log.assert_no_overlap(other.program.log)
+            self.program.log.assert_no_overlap(other.program.log, self.hosts[0].cfg, other.hosts[0].cfg)
         except ShException:
             log_error("Instances of two commands log to the same file,"
                       "and will clobber each other:")
@@ -366,7 +387,7 @@ class ShCommand(object):
         self.started = True
         max_dur = None if self.program.stop is not None else self.max_duration
         for i, (host, start_cmd) in enumerate(self.start_cmds()):
-            cmd_name = "%s on %s" % (self.program.name, host.name)
+            cmd_name = "%s on %s" % (self.program.name, host.addr)
             host_log_entry = {}
 
             host_log_entry['addr_'] = host.addr
@@ -440,7 +461,10 @@ class ShRemote(object):
         self.cfg.args = args_dict
         self.cfg.label = label
         self.cfg.user = os.getenv('USER')
-        self.cfg.cfg_dir = os.path.dirname(cfg_file)
+        if os.path.dirname(cfg_file):
+            self.cfg.cfg_dir = os.path.dirname(cfg_file)
+        else:
+            self.cfg.cfg_dir = '.'
         self.cfg.output_dir = self.output_dir
         log("Assuming user is : %s" % self.cfg.user)
 
@@ -691,6 +715,7 @@ class ShRemote(object):
         self.get_logs()
         self.run_post_cmds()
 
+        log_info("Test complete! Output to {}".format(self.output_dir))
         log_info("Done with test!")
         close_logfile()
         return self.event.is_set()
