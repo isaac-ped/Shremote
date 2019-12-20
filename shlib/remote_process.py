@@ -32,8 +32,11 @@ class RemoteProcess(object):
             return True
         return False
 
-    def start(self):
+    def start(self, sudo_passwd=None):
         self.stdin, self.stdout, self.stderr = self.client.exec_command(self.cmd)
+        if sudo_passwd is not None:
+            self.stdin.write(sudo_passwd+'\n')
+            self.stdin.flush()
 
     def run_process_monitor(self, **kwargs):
         try:
@@ -84,11 +87,17 @@ class RemoteProcess(object):
         return rtn
 
 
-def insert_exec(cmd):
+def insert_exec(cmd, do_sudo):
     parts = shlex.split(cmd, posix=False)
     split_cmd = []
     inserted = False
+    n_sudos = 0
+    in_sudo = False
     for i, part in enumerate(parts[::-1], 1):
+        if do_sudo:
+            if part == 'sudo':
+                n_sudos += 1
+                part = 'sudo -S'
         if not inserted and part in ('&&', '||', ';'):
             split_cmd.insert(0, 'exec')
             inserted=True
@@ -97,11 +106,17 @@ def insert_exec(cmd):
     if not inserted:
         split_cmd.insert(0, 'exec')
 
+    if do_sudo and n_sudos != 1:
+        log_warn("There is not exactly one 'sudo' in command %s" % cmd)
     return 'echo $$ && ' + ' '.join(split_cmd)
 
-def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwargs):
+def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, do_sudo, sudo_passwd, **kwargs):
     client = SSHClient()
     client.load_system_host_keys()
+
+    if do_sudo and sudo_passwd is None:
+        log_warn("Sudo option specified on host %s, which has no sudo password. Ignoring" % addr)
+        do_sudo = False
 
     try:
         client.connect(addr,
@@ -112,10 +127,10 @@ def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwa
         log_error("Could not connect to {user}@{addr}:{port} with key {key}".format(addr=addr, **ssh_cfg))
         raise
     except Exception as e:
-        log_error("Unknown error connecting  to {user}@{addr}:{port} with key {key}".format(addr=addr, **ssh_cfg))
+        log_error("Unknown error connecting to {user}@{addr}:{port} with key {key}".format(addr=addr, **ssh_cfg))
         raise
 
-    with_exec = insert_exec(cmd)
+    with_exec = insert_exec(cmd, do_sudo)
 
     log(addr, ":", with_exec)
 
@@ -123,7 +138,10 @@ def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, **kwa
         name = get_name_from_cmd(cmd)
 
     remote_proc = RemoteProcess(client, name, with_exec, error_event, log_entry)
-    remote_proc.start()
+    if do_sudo:
+        remote_proc.start(sudo_passwd)
+    else:
+        remote_proc.start()
     remote_proc.monitor(**kwargs)
 
     return remote_proc

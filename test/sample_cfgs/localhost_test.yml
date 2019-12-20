@@ -1,6 +1,7 @@
 hosts:
   localhost:
     addr: localhost
+    sudo_passwd: $( askpass('localhost') )
 
 programs:
     echo:
@@ -12,8 +13,8 @@ programs:
             err: echo.err
     bgecho:
         start: >-
-            bash ~/Projects/Shremote/launch_in_bg.sh
-            bash ~/Projects/Shremote/start_sleeping.sh 100 {host.output_dir}/bgecho.txt
+            bash {0.cfg_dir}/../../launch_in_bg.sh
+            bash {0.cfg_dir}/../..//start_sleeping.sh 100 {host.output_dir}/bgecho.txt
         stop: pkill sleep
         bg: true
         hosts: localhost
@@ -21,9 +22,17 @@ programs:
             dir: bgecho
 
     long_sleep:
-        start: sleep 40
+        start: sleep 500
         stop: kill {pid}
         hosts: localhost
+
+    sudo_cat:
+        hosts: localhost
+        start: echo "reading from file" && sudo cat ~/Projects/Shremote/locked
+        sudo: true
+        log:
+            out: cat.out
+            err: cat.err
 
 
 computed_a: $( 15 + 2 )
@@ -42,3 +51,6 @@ commands:
     - program: long_sleep
       begin: 0
       max_duration: 10
+
+    - program: sudo_cat
+      begin: 0

@@ -3,6 +3,7 @@ import re
 import pprint
 import os
 import ast
+from getpass import getpass
 from .logger import log_warn
 from collections import defaultdict
 
@@ -20,6 +21,8 @@ class BadExecException(CfgFormatException):
 
 class FmtConfig(object):
     """ Formattable config """
+
+    __password_cache = {}
 
     __format_kwargs = None
 
@@ -392,6 +395,14 @@ class FmtConfig(object):
         return st[start_idx:end_idx+1]
 
     def do_eval(self, value):
+
+        def askpass(host="default host"):
+            if host in self.__password_cache:
+                return self.__password_cache[host]
+            else:
+                passwd = getpass("Password for %s:" % host)
+                self.__password_cache[host] = passwd
+                return passwd
 
         def getarg(key, default=None):
             return self.__root['args'].get(key, default).format()

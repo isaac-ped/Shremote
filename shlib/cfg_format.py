@@ -8,7 +8,7 @@ class SshCfg(CfgMap):
     _fields = [
             CfgField('user', str, '{0.user}'),
             CfgField('key', str, '~/.ssh/id_rsa'),
-            CfgField('port', int, 22)
+            CfgField('port', int, 22),
     ]
 
 class CmdsCfg(CfgMapList):
@@ -24,6 +24,7 @@ class HostsCfg(CfgMapMap):
             CfgField('name', str, aliases='_name'),
             CfgMap('ssh', inherit=SshCfg),
             CfgField('log_dir', str, default="{0.log_dir}"),
+            CfgField('sudo_passwd', str, default=None),
             CfgField('enabled', bool, default=True)
     ]
     _reserved_fields = [
@@ -63,6 +64,7 @@ class ProgramsCfg(CfgMapMap):
             CfgField('duration_exceeded_error', bool, default=False),
             CfgField('bg', bool, default=False),
             CfgField('checked_rtn', [int, bool, NullType], default=None, aliases=('check_rtn')),
+            CfgField('sudo', bool, default=False),
             CfgField('defaults', dict, default=dict())
     ]
 

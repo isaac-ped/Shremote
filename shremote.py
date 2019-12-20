@@ -70,6 +70,7 @@ class ShHost(object):
         self.addr = hostname
         self.ssh = cfg.ssh
         self.cfg = cfg
+        self.sudo_passwd = cfg.sudo_passwd.format()
         label = cfg.get_root().label.format()
         self.log_dir = os.path.join(cfg.log_dir.format(), label)
 
@@ -96,8 +97,9 @@ class ShHost(object):
             p.join()
         return p
 
-    def exec_cmd(self, cmd, event=None, background=True, log_entry = None, name = None, **kwargs):
-        proc = start_remote_process(cmd, self.ssh, self.addr, event, log_entry, name, **kwargs)
+    def exec_cmd(self, cmd, event=None, background=True, log_entry = None, name = None, do_sudo = False, **kwargs):
+        proc = start_remote_process(cmd, self.ssh, self.addr, event, log_entry, name,
+                                    do_sudo, self.sudo_passwd, **kwargs)
         if not background:
             proc.join()
         return proc
@@ -233,6 +235,7 @@ class ShProgram(object):
         self.longer_error = cfg.duration_exceeded_error.format()
         self.checked_rtn = cfg.checked_rtn.format()
         self.background = cfg.bg.format()
+        self.sudo = cfg.sudo.format()
 
     def start_cmd(self, host, host_idx):
         log_dir = self.log.log_dir(host, host_idx)
@@ -370,11 +373,15 @@ class ShCommand(object):
 
             if kill_pid:
                 log("LAST ATTEMPT TO KILL %s" % cmd_name)
-                host.exec_cmd("kill -9 %s" % proc.first_line, background=False,
-                              name = cmd_name + "_KILL", log_end = False)
+                if self.program.sudo:
+                    cmd = 'sudo kill -9'
+                else:
+                    cmd = 'kill -9'
+                host.exec_cmd("%s %s" % (cmd, proc.first_line), background=False,
+                              name = cmd_name + "_KILL", log_end = False, do_sudo = self.program.sudo)
             elif stop_cmd is not None:
                 host.exec_cmd(stop_cmd, background = False,
-                              name = cmd_name + "_stop", log_end = False)
+                              name = cmd_name + "_stop", log_end = False, do_sudo = self.program.sudo)
 
             if self.program.background:
                 log_entry['stop_time_'] = float(time.time())
@@ -402,14 +409,16 @@ class ShCommand(object):
                                   min_duration = self.min_duration,
                                   max_duration = max_dur,
                                   checked_rtn = self.program.checked_rtn,
-                                  log_end = True)
+                                  log_end = True,
+                                  do_sudo = self.program.sudo)
             else:
                 p = host.exec_cmd(start_cmd, self.event,
                                   background=False,
                                   name = cmd_name,
                                   checked_rtn = self.program.checked_rtn,
                                   max_duration = max_dur,
-                                  log_end = True)
+                                  log_end = True,
+                                  do_sudo = self.program.sudo)
             self.processes.append(p)
 
             host_log_entry.update(self.formatted(host, i))
