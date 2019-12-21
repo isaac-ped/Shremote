@@ -6,7 +6,7 @@ Usage:
 ```shell
 usage: shremote_new.py [-h] [--parse-test] [--get-only] [--out OUT]
                        [--delete-remote] [--args ARGS]
-                       cfg_file label
+                       cfg_file label [-- extra-args]
 
 Schedule remote commands over SSH
 
@@ -21,7 +21,9 @@ optional arguments:
   --out OUT        Directory to output files into
   --delete-remote  Deletes remote log directories
   --args ARGS      Additional arguments which are passed to the config file
-                   (format 'k1:v1;k2:v2')
+                   (format 'k1:v1;k2:v2').
+                   Arguments may also be passed as flags following a '--'
+                   (e.g. -- --k1=v1 --k2=v2)
 ```
 
 ## Basic Configuration Format
@@ -161,7 +163,7 @@ which must have been provided by the user from the command line, such as:
 * `{host.addr}` (within a command or program)
 will be substituted for the address of the host on which
 the currently executing command is running.
-* `{remote_log_dir}` will be substituted for the directory
+* `{host.log_dir}` will be substituted for the directory
 into which logs are placed on a remote host
 
 #### Evaluation
@@ -175,6 +177,33 @@ E.g. `$(x + "y" * 5 + z)` will evaluate to `"xyyyyyz"`, and `$(40 + 2)`
 will evaluate to `42`.
 
 References may also be nested within evaluations.
+
+In addition to typical python functionality, four special functions are
+provided for use within `$(...)` blocks:
+
+```yaml
+# Get a command line argument, providing a default value
+# e.g. if shremote was initialized with --key=value: 'value'
+#      otherwise: 'default_value'
+x: $( getarg('key', 'default_value') )
+
+# Check for the existence of a command line argument
+x: $( 1 if hasarg('key') else 2)
+# or
+enabled: $(hasarg('use_program'))
+
+#  Pass through an argument from the command line
+# e.g. if shremote was initialized with --context=3,
+#       this will pass --context=3 to grep. Otherwise it is ignored
+start: grep $( passarg('context') )
+
+# Prompt the user for a password at program initialization.
+# Useful especially for sudo access
+my_host:
+    sudo_password: $( askpass('host_id') )
+# 'host_id' is an identifier, which allows you to use the same prompted
+# password in multiple locations without reprompting
+```
 
 #### Inclusion
 One yaml file, or parts of a yaml file, may be included in another
@@ -245,6 +274,7 @@ Remote hosts on which to execute commands
   * `hostname`: The address (Hostname or IP) to use for ssh'ing
   * `ssh`: (optional) overrides `ssh` above
   * `log_dir`: (optional) Overrides `log_dir` above
+  * `sudo_passwd`: (optional) Provide a password to use when running `sudo` commands on that host. It is suggested to use the value `$( askpass('<hostname>') )` to avoid storing passwords in the config
 * **Computed Fields**:
   * `output_dir`: The directory to which this experiment's logs are output on this host
   (`{log_dir}/{0.label}`)
@@ -259,6 +289,7 @@ Specifies files to be copied from the local host to remote hosts
   * `src`: The source location of the file on the local host
   * `dst`: The destination of the file on the remote host
   * `hosts`: Host(s) (or references to host(s)) onto which the file should be copied
+  * `enabled`: (optional) If False, this file will not be copied
 * **Computed fields**:
   * `host`: If copying to multiple hosts, the config map of the current host.
   Thus `{host.output_dir}` references the output directory on the remote host
@@ -278,6 +309,8 @@ Specifies programs to be executed on remote hosts.
   * `duration_exceeded_error`: (optional) If `true`, shremote will throw an error if the program lasts longer than the command's `max_duration`. Defaults to `false`.
   * `bg`: (optional) If `true`, the command will run in the background, and will have to be manually stopped with the `stop` command
   * `defaults`: (optional) Provides default arguments for string substitution. Overridden by fields in the `command`
+  * `checked_rtn`: (optional) If provided, shremote will stop execution if the return value of the command to start the program is not equal to this value (generally `0`)
+  * `sudo`: (optional) If True, shremote will automatically enter in the host's `sudo_passwd` field to stdin when running the program. This field will not function properly if `sudo` is not used exactly one time in the `start` command.
   * log: A map containing:
     * `dir`: (optional) A sub-directory into which logs should be placed
     * `out`: (optional) A file to which stdout should be logged
@@ -294,6 +327,7 @@ Specifies when and where to execute commands
   * `begin`: The time, relative to the start of the experiment, at which to run the command
   * `min_duration`: The minimum duration to run the command for. Only has an effect if `program.duration_reduced_error` is set to true
   * `max_duration`: The maximum duration for which the command is to be run. The command is killed after this duration is exceeded. If `program.duration_exceeded_error` is `true`, reaching this duration will raise an error
+  * `enabled`: (optional) If False, the command will not be run
 * **Computed fields**:
   * `host_idx`: If executing on multiple hosts, the index of the currently-executing host
   * `log_dir`: The full path to the log directory for this program (including `<program>.log.dir`) on the active host.
@@ -308,4 +342,4 @@ These fields are available with `{0.<field>}` throughout the config
 * `output_dir`: The directory that logs will be copied to on the local machine
 * `cfg_dir`: The directory in which the config file resides
 * `args`: A map of the key-value argument provided in the `--args` argument at startup.
-  e.g. if the args string is `--args "key_a:value_b"`, the string `{0.args.key_a}` will be replaced by `value_b`
+  e.g. if the args string is `--args "key_a:value_b"`, or the program was started with `-- --key_a=value_b`, the string `{0.args.key_a}` will be replaced by `value_b`
