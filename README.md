@@ -113,20 +113,21 @@ The following is an overview of the configuration format and capabilities
 ### Capabilities
 
 #### References
-Certain fields in the [format spec](shlib/cfg_format.py) are of type CfgReference..
-These fields (`file.host`, `program.host`, and `command.program`) allow
-the config file to reference another section by referring to it with a key.
-
+Certain fields in the config may be referred to by using their key.
 This allows for the reuse of `host`s and `program`s within and throughout
 config files.
 
-If the reference field is a string, it should refer to a key in the
-appropriate section. E.g. if a program specifies a host `host_foo`,
-the `hosts` section should have a host with the key `host_foo`.
+For example, a program may refer to its host by name, or it may define the host inline.
+Similarly, a command may specify the program by name, or define it inline.
 
-If the reference field is not a string, it should be a map which
-matches the format of the referent. E.g. a command may completely
-specify a program's start command, logs, etc.
+If a field is defined inline, it must match the format specifications
+of the field it refers to.
+
+(e.g. a program's inline `host` must meet the requirements of a top-level specified `host`)
+
+The fields which may use references are of type CfgReference in the [format_spec](shlib/cfg_format.py)
+
+Example: [references.yml](examples/references.yml)
 
 #### Substitutions
 Throughout the config file, remote sections of the config file may
@@ -137,20 +138,29 @@ The root of the config file is always passed in as the first argument
 to `.format()`, so `{0.a}` is expanded into the contents of the
 field `a` at the root of the config.
 
-The fields of certain maps
+Certain fields
 (marked with the flag `format_root` in the [format spec](cfg_format.yml)
-are also passed in as keyword arguments to `.format()`
+are also passed as  keyword arguments to `.format()`
 
-For example, and field which is a child of a `command` may reference
-that specific command's fields.
+For example, a program may specify a start string `{foo}`, if the
+command which uses that program defines a field of that name:
 
-E.g., if a program's start string includes `{foo}`, the command
-may define a field `foo: "bar"`.
-Upon execution, the start string will substitute `{foo}` with `bar`.
+```yaml
+program:
+    echo:
+        start: echo "{foo}"
+        
+commands:
+    - program: echo
+      foo: bar
+```
+In this example, the utilized command will be `echo "bar".
+
+Example: [substitutions.yml](examples/substitutions.yml)
 
 ##### Computed fields
-Certain substitutable fields dynamic, and are thus not specified
-in the config file directly.
+Certain substitutable fields are dynamic, and thus are not directly
+defined by the config file.
 Those fields are provided by shremote at runtime, and may differ
 between executions of a command.
 
@@ -165,6 +175,8 @@ will be substituted for the address of the host on which
 the currently executing command is running.
 * `{host.log_dir}` will be substituted for the directory
 into which logs are placed on a remote host
+
+Example: [computed_fields.yml](examples/computed_fields.yml)
 
 #### Evaluation
 Strings, or portions of strings, placed within `$(...)` will be run through
@@ -204,6 +216,8 @@ my_host:
 # 'host_id' is an identifier, which allows you to use the same prompted
 # password in multiple locations without reprompting
 ```
+
+Example: [evaluated_fields.yml](examples/evaluated_fields.yml)
 
 #### Inclusion
 One yaml file, or parts of a yaml file, may be included in another
