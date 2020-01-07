@@ -1,5 +1,5 @@
 import paramiko
-from paramiko import SSHClient
+from paramiko import SSHClient, AutoAddPolicy
 from .checked_process import get_name_from_cmd, monitor_wait, \
                               monitor_process, CheckedProcessException
 from .logger import *
@@ -112,6 +112,7 @@ def insert_exec(cmd, do_sudo):
 
 def start_remote_process(cmd, ssh_cfg, addr, error_event, log_entry, name, do_sudo, sudo_passwd, **kwargs):
     client = SSHClient()
+    client.set_missing_host_key_policy(AutoAddPolicy())
     client.load_system_host_keys()
 
     if do_sudo and sudo_passwd is None:
