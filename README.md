@@ -149,7 +149,7 @@ command which uses that program defines a field of that name:
 program:
     echo:
         start: echo "{foo}"
-        
+
 commands:
     - program: echo
       foo: bar
@@ -337,10 +337,13 @@ Specifies when and where to execute commands
 * **Format**: List of maps
 * **Fields**:
   * `program`: Program (or reference to program) to execute
+  * `name`: (automatically filled) defaults to the program name
   * `hosts`: Host(s) (or references to host(s)) on which to execute the program. Overrides any host defined within the program.
   * `begin`: The time, relative to the start of the experiment, at which to run the command
   * `min_duration`: The minimum duration to run the command for. Only has an effect if `program.duration_reduced_error` is set to true
   * `max_duration`: The maximum duration for which the command is to be run. The command is killed after this duration is exceeded. If `program.duration_exceeded_error` is `true`, reaching this duration will raise an error
+  * `start_after`: If present, this command will start following the end of the command with the given name
+  * `stop_after`: If present, this command will stop following the end of the command with the given name
   * `enabled`: (optional) If False, the command will not be run
 * **Computed fields**:
   * `host_idx`: If executing on multiple hosts, the index of the currently-executing host

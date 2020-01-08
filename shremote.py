@@ -11,7 +11,7 @@ from shlib.logger import * # log*(), set_logfile(), close_logfile()
 
 from shlib.cfg_format_v0 import likely_v0_cfg, load_v0_cfg
 
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import sys
 import re
 import threading # For threading.Event
@@ -252,23 +252,35 @@ class ShProgram(object):
 
 class ShCommand(object):
 
+    def __repr__(self):
+        return "<ShCommand object: %s.%s>" % (self.name, self.begin)
+
     def __init__(self, cfg, event):
         self.cfg = cfg
         self.event = event
-        self.begin = cfg.begin.format()
+        self.name = cfg.name.format()
+        self.begin = cfg.get('begin', None).format()
+        self.start_trigger_name = cfg.get('start_after', None).format()
+        self.stop_trigger_name = cfg.get('stop_after', None).format()
+        self.start_trigger = None
+        self.stop_trigger = None
+
         self.program = ShProgram(cfg.program)
         self.hosts = ShHost.create_host_list(cfg.hosts)
         if len(self.hosts) == 0:
-            log_error("Hosts for command %s are all disabled" % self.program.name)
+            log_error("Hosts for command %s are all disabled" % self.name)
             raise ShException("No enabled hosts")
         self.max_duration = cfg.max_duration.format()
         self.min_duration = cfg.min_duration.format()
         self.log_entries = []
         self.processes = []
+        self.dependent_starts = []
+        self.dependent_stops = []
         self.started = False
+        self.started_time = None
         self.stopped = False
 
-        if self.max_duration is not None:
+        if self.max_duration is not None and self.begin is not None:
             self.end = self.begin + self.max_duration
         else:
             self.end = None
@@ -277,6 +289,32 @@ class ShCommand(object):
             log_warn("Min duration specified but shorter_duration_error is false for: {}"
                      .format(self.pformat()))
             self.min_duration = None
+
+    def dependencies_contain(self, cmd):
+        if self.start_trigger is not None:
+            if self.start_trigger == cmd:
+                return True
+
+            if self.start_trigger.dependencies_contain(cmd):
+                return True
+
+        if self.stop_trigger is not None:
+            if self.stop_trigger == cmd:
+                return True
+
+            if self.stop_trigger.dependencies_contain(cmd):
+                return True
+
+        return False
+
+
+    def add_start_dependency(self, cmd):
+        self.dependent_starts.append(cmd)
+        cmd.start_trigger = self
+
+    def add_stop_dependency(self, cmd):
+        self.dependent_stops.append(cmd)
+        cmd.stop_trigger = self
 
     def get_logs(self, local_dir, event=None):
         return self.program.log.copy_local(self.hosts, local_dir, background=True, event=event)
@@ -306,6 +344,13 @@ class ShCommand(object):
             raise
 
     def validate(self):
+        if self.begin is None and self.start_trigger_name is None:
+            log_error("Must provide either 'begin' or 'start_after' for all commands")
+            raise ShException("No start trigger for command %s" % (self.name))
+
+        if self.dependencies_contain(self):
+            raise ShException("Dependency loop encountered for command %s" % (self.name))
+
         for i, host in enumerate(self.hosts):
             try:
                 start_cmd = self.program.start_cmd(host, i)
@@ -362,10 +407,36 @@ class ShCommand(object):
                 return False
         return True
 
+    def started_dependencies(self):
+        deps = []
+        for cmd in self.dependent_starts:
+            if cmd.started:
+                deps.append(cmd)
+                deps.extend(cmd.started_dependencies())
+        return deps
+
+    def ready_start_dependencies(self):
+        if (not self.started) or (not self.exited()):
+            return []
+        ready = []
+        for cmd in self.dependent_starts:
+            if not cmd.started:
+                ready.append(cmd)
+        return ready
+
+    def ready_stop_dependencies(self):
+        if (not self.started) or (not self.exited()):
+            return []
+        ready = []
+        for cmd in self.dependent_stops:
+            if cmd.running():
+                ready.append(cmd)
+        return ready
+
     def stop(self, kill_pid = False):
-        log("Attempting stop of", self.program.name)
+        log("Attempting stop of", self.name)
         for (host, proc, stop_cmd), log_entry in zip(self.stop_cmds(), self.log_entries):
-            cmd_name = "STOP %s on %s" % (self.program.name, host.name)
+            cmd_name = "STOP %s on %s" % (self.name, host.name)
             if not self.program.background and proc.exited:
                 log("Process %s already exited" % cmd_name)
                 proc.join()
@@ -378,10 +449,10 @@ class ShCommand(object):
                 else:
                     cmd = 'kill -9'
                 host.exec_cmd("%s %s" % (cmd, proc.first_line), background=False,
-                              name = cmd_name + "_KILL", log_end = False, do_sudo = self.program.sudo)
+                              name = "kill %s " % cmd_name,  log_end = False, do_sudo = self.program.sudo)
             elif stop_cmd is not None:
                 host.exec_cmd(stop_cmd, background = False,
-                              name = cmd_name + "_stop", log_end = False, do_sudo = self.program.sudo)
+                              name = "stop %s " % cmd_name , log_end = False, do_sudo = self.program.sudo)
 
             if self.program.background:
                 log_entry['stop_time_'] = float(time.time())
@@ -392,9 +463,10 @@ class ShCommand(object):
 
     def start(self, log_entry):
         self.started = True
+        self.started_time = time.time()
         max_dur = None if self.program.stop is not None else self.max_duration
         for i, (host, start_cmd) in enumerate(self.start_cmds()):
-            cmd_name = "%s on %s" % (self.program.name, host.addr)
+            cmd_name = "%s on %s" % (self.name, host.addr)
             host_log_entry = {}
 
             host_log_entry['addr_'] = host.addr
@@ -481,15 +553,43 @@ class ShRemote(object):
 
 
         self.commands = [ShCommand(cmd, self.event) for cmd in self.cfg.commands if cmd.enabled.format()]
-        self.commands = sorted(self.commands, key = lambda cmd: cmd.begin)
 
-        self.command_instances = []
+        cmd_names = defaultdict(list)
+        self.timed_commands = []
         for command in self.commands:
-            self.command_instances.append(self.CommandInstance(command.begin, False, command))
+            if command.begin is not None:
+                self.timed_commands.append(self.CommandInstance(command.begin, False, command))
+                cmd_names[command.name].append(command)
             if command.end is not None:
-                self.command_instances.append(self.CommandInstance(command.end, True, command))
+                self.timed_commands.append(self.CommandInstance(command.end, True, command))
 
-        self.command_instances = sorted(self.command_instances, key = lambda cmd: cmd.time)
+        self.timed_commands = sorted(self.timed_commands, key = lambda cmd: cmd.time)
+
+        for command in self.commands:
+            if command.start_trigger_name is not None:
+                matches = cmd_names[command.start_trigger_name]
+                if len(matches) == 0:
+                    raise ShException("Command %s triggered by nonexistent name %s" %
+                                        (command.name, command.start_trigger_name))
+                if len(matches) > 1:
+                    raise ShException("Command %s triggered by ambiguous name %s" %
+                                        (command.name, command.start_trigger_name))
+
+                matches[0].add_start_dependency(command)
+                cmd_names[command.name].append(command)
+
+            if command.stop_trigger_name is not None:
+                matches = cmd_names[command.stop_trigger_name]
+                if len(matches) == 0:
+                    raise ShException("Command %s triggered stop by nonexistent name %s" %
+                                        (command.name, command.start_trigger_name))
+                if len(matches) > 1:
+                    raise ShException("Command %s triggered stop by ambiguous name %s" %
+                                        (command.name, command.start_trigger_name))
+
+                matches[0].add_stop_dependency(command)
+
+
 
         self.init_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('init_cmds', [])]
         self.post_cmds = [ShLocalCmd(cmd, self.event) for cmd in self.cfg.get('post_cmds', [])]
@@ -500,6 +600,32 @@ class ShRemote(object):
         for cfg in self.cfg.get('files', {}).values():
             if cfg.enabled.format():
                 self.files.append(ShFile(cfg, self.output_dir))
+
+    def has_waiting_dependencies(self):
+        for cmd in self.commands:
+            if len(cmd.ready_start_dependencies()) > 0:
+                return True
+            if len(cmd.ready_stop_dependencies()) > 0:
+                return True
+
+    def waiting_dependencies(self, start=True, stop=True):
+        deps = []
+        for cmd in self.commands:
+            if start:
+                for dep in cmd.ready_start_dependencies():
+                    deps.append(dep)
+            if stop:
+                for dep in cmd.ready_stop_dependencies():
+                    deps.append(dep)
+        return deps
+
+    def handle_waiting_dependencies(self):
+        for cmd in self.commands:
+            for dep in cmd.ready_start_dependencies():
+                dep.start(self.event_log)
+
+            for dep in cmd.ready_stop_dependencies():
+                dep.stop()
 
     def show_args(self):
         required_args = set()
@@ -616,102 +742,122 @@ class ShRemote(object):
             cmds_summary.append('\n\t'.join(cmd_summary))
         log_info('\n' + '\n'.join(cmds_summary))
 
+    def any_commands_unfinished(self):
+        for cmd in self.commands:
+            if (not cmd.started) or (not cmd.exited()):
+                return True
+        return False
+
+    def any_commands_running(self):
+        for cmd in self.commands:
+            if cmd.running():
+                return True
+        return False
+
+    def sleep_for(self, delay):
+        if delay < -.1:
+            log_warn("Falling behind on execution by %.01f seconds" % -delay)
+            return True
+        log("sleeping for %d" % delay)
+        end_time = time.time() + delay
+        while time.time() < end_time:
+            if self.event.wait(1):
+                return False
+            if not self.any_commands_unfinished():
+                return False
+            if self.has_waiting_dependencies():
+                return False
+        return True
+
+    def wait_iter_commands(self, start_time):
+        while self.any_commands_unfinished():
+            while self.has_waiting_dependencies():
+                for cmd in self.waiting_dependencies(start=True, stop=False):
+                    yield self.CommandInstance(-1, False, cmd)
+                for cmd in self.waiting_dependencies(stop=True, start=False):
+                    yield self.CommandInstance(-1, True, cmd)
+
+            next_commands = []
+            for timed_cmd in self.timed_commands:
+                if not timed_cmd.is_stop and not timed_cmd.cmd.started:
+                    next_commands.append(timed_cmd)
+                if timed_cmd.is_stop and not timed_cmd.cmd.stopped:
+                    next_commands.append(timed_cmd)
+
+                for cmd in timed_cmd.cmd.started_dependencies():
+                    if cmd.max_duration is not None and not cmd.stopped:
+                        end_time = (cmd.started_time - start_time) + cmd.max_duration
+                        next_commands.append(self.CommandInstance(end_time, True, cmd))
+
+            next_commands = sorted(next_commands, key=lambda cmd: cmd.time)
+            if len(next_commands) == 0:
+                continue
+
+            next_command = next_commands[0]
+
+            elapsed = time.time() - start_time
+            delay = next_command.time - elapsed
+            if self.sleep_for(delay):
+                yield next_command
+            else:
+                if self.has_waiting_dependencies():
+                    continue
+                return
+
     def run_commands(self):
         if self.event.is_set():
             log_error("Not running commands! Execution already halted")
             return
-        min_begin = self.commands[0].begin
+        min_begin = self.timed_commands[0].cmd.begin
         start_time = time.time() - min_begin
 
         elapsed = 0
         last_begin = 0
-        max_end = 0
 
-        for cmd_time, is_stop, cmd in self.command_instances:
-            elapsed = time.time() - start_time
-            delay = cmd_time - elapsed
-
-            if delay > 0:
-                log("Sleeping for %d" % delay)
-                errored = False
-                while delay > 0:
-                    if self.event.wait(1):
-                        log_warn("Error encountered in other thread! Stopping execution")
-                        errored = True
-                        break
-                    elapsed = time.time() - start_time
-                    delay = cmd_time - elapsed
-
-                    any_running = False
-                    for other_cmd in self.commands:
-                        if (not other_cmd.started) or (not other_cmd.exited()):
-                            any_running = True
-                            break
-
-                    if not any_running:
-                        log_info("Nothing left running! Ending early.")
-                        break
-
-                if errored or not any_running:
-                    break
-
-            elif last_begin != time and delay > .1:
-                log_warn("Falling behind on execution by %.1f s" % delay)
-
-            last_begin = cmd_time
-
+        for cmd_time, is_stop, cmd in self.wait_iter_commands(start_time):
             if is_stop:
                 cmd.stop()
             else:
-                cmd.start(self.event_log)
+                if not cmd.started:
+                    cmd.start(self.event_log)
 
-            max_end = max(max_end, cmd.begin + \
-                                    max(cmd.max_duration if cmd.max_duration is not None else 0,
-                                        cmd.min_duration if cmd.min_duration is not None else 0))
-
-        elapsed = time.time() - start_time
-        delay = max_end - elapsed
-        while (delay > 0):
-            if self.event.wait(1):
-                log_warn("Error encountered in other thread during final wait period!")
-                time.sleep(1)
+        # Wait for commands to be done, or error event to be set
+        while self.any_commands_running():
+            time.sleep(1)
+            if self.event.is_set():
+                log_warn("Error event detected from main thread")
                 break
 
             for cmd in self.commands:
                 if cmd.running():
-                    break
-            else:
-                log("Commands done early")
-                break
+                    log("Waiting on command %s to finish" % cmd.name)
 
-        any_running = False
+        # Iterate once to stop all commands
         for cmd in self.commands:
             if cmd.running():
-                any_running = True
                 cmd.stop()
 
+        # Try multiple times to stop any commands that are still running
         stops_attempted = 0
-        do_kill = False
-        while any_running and self.interrupts_attempted <= 2:
-            time.sleep(.25)
-            any_running = False
+        while self.any_commands_running():
+            time.sleep(.5)
             for cmd in self.commands:
                 if cmd.running():
                     cmd.stop()
-                    any_running = True
-            stops_attempted+=1
+            stops_attempted += 1
             if stops_attempted > 20:
-                do_kill = True
                 break
 
-        if do_kill:
-            for cmd in self.commands:
-                if cmd.running():
-                    cmd.stop(True)
+        # Kill any programs that couldn't be stopped
+        for cmd in self.commands:
+            if cmd.running():
+                cmd.stop(True)
+
+        if self.any_commands_running():
             time.sleep(1)
             for cmd in self.commands:
                 if cmd.running():
-                    log_warn("Program %s may still be running" % cmd.program.name)
+                    log_warn("Command %s appears to still be running" % cmd.name)
 
     def stop(self):
         self.event.set()
