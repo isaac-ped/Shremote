@@ -73,9 +73,12 @@ class CommandsCfg(CfgMapList):
     _fields = [
             CfgReference('program', ProgramsCfg, required=True),
             CfgReference('hosts', HostsCfg, sibling_inherit=['program', 'hosts'], aliases=('host'), list_ok = True),
-            CfgField('begin', float, required=True),
+            CfgField('begin', float, required=False),
+            CfgField('name', str, default='{program.name}'),
             CfgField('min_duration', [float, NullType], default=None),
             CfgField('max_duration', [float, NullType], default=None),
+            CfgField('start_after', str, required=False),
+            CfgField('stop_after', str, required=False),
             CfgField('enabled', bool, default=True)
     ]
 
