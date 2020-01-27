@@ -376,6 +376,39 @@ class FmtConfig(object):
 
     @staticmethod
     def innermost_exec_str(st):
+
+        exec_starts = []
+        exec_strs = []
+        exec_level = 0
+        inner_level = 0
+
+        i=0
+        while i < len(st):
+            if st[i:i+3] == '$$(':
+                i+=2
+                inner_level += 1
+            elif st[i:i+2] == '$(':
+                exec_starts.append(i)
+                i+=1
+            elif st[i] == '(':
+                inner_level += 1
+            elif st[i] == ')':
+                if inner_level > 0:
+                    inner_level -= 1
+                elif len(exec_starts) > 0:
+                    return st[exec_starts.pop(-1):i+1]
+                else:
+                    raise BadExecException("Cannot find start of exec string: {}".format(st))
+            i+=1
+
+        if len(exec_starts) != 0:
+            raise BadExecException("Cannot find end of exec string: {}".format(st))
+
+        if len(exec_starts) == 0:
+            return None
+
+        START_TOK = '$('
+
         # To start, find all $( which aren't $$(
         matches = re.finditer(r'(^|[^$])(\$\()', st)
         starts = [m.start(2) for m in matches]
