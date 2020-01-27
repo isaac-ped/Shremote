@@ -582,10 +582,10 @@ class ShRemote(object):
                 matches = cmd_names[command.stop_trigger_name]
                 if len(matches) == 0:
                     raise ShException("Command %s triggered stop by nonexistent name %s" %
-                                        (command.name, command.start_trigger_name))
+                                        (command.name, command.stop_trigger_name))
                 if len(matches) > 1:
                     raise ShException("Command %s triggered stop by ambiguous name %s" %
-                                        (command.name, command.start_trigger_name))
+                                        (command.name, command.stop_trigger_name))
 
                 matches[0].add_stop_dependency(command)
 
