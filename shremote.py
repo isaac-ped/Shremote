@@ -130,12 +130,14 @@ class ShFile(object):
                 log_error("Error formatting dest of file {}: {}".format(self.name, e))
                 raise
 
-    def copy_to_host(self, event=None):
+    def copy_to_host(self, event=None, background=True):
+        procs = []
         for host in self.hosts:
             src = self.cfg_src.format(host = host.cfg)
             dst = self.cfg_dst.format(host = host.cfg)
             log_info("Copying {} to host {}".format(src, host.name))
-            host.copy_to(src, dst, background=False, event=event)
+            procs.append(host.copy_to(src, dst, background=background, event=event))
+        return procs
 
 class ShLog(object):
 
@@ -658,8 +660,11 @@ class ShRemote(object):
             cmd.execute()
 
     def copy_files(self):
+        procs = []
         for file in self.files:
-            file.copy_to_host(self.event)
+            procs.extend(file.copy_to_host(self.event))
+        for proc in procs:
+            proc.join()
 
     def delete_remote_logs(self):
         remote_dirs = set()
