@@ -23,6 +23,7 @@ import signal
 import itertools
 import textwrap
 import time
+import copy
 
 class ShException(Exception):
     pass
@@ -292,6 +293,11 @@ class ShCommand(object):
                      .format(self.pformat()))
             self.min_duration = None
 
+        log("Preparing formatted trees for command %s" % self.name)
+        self.formatted_trees = []
+        for i, (host, start_cmd) in enumerate(self.start_cmds()):
+            self.formatted_trees.append(self.formatted(host, i))
+
     def dependencies_contain(self, cmd):
         if self.start_trigger is not None:
             if self.start_trigger == cmd:
@@ -331,7 +337,11 @@ class ShCommand(object):
         return self_dict
 
     def formatted(self, host, host_idx):
-        return self.cfg.format_tree(host=host.cfg, host_idx=host_idx, pid='__pid__')
+        host_only_cfg = copy.deepcopy(self.cfg)
+        host_only_cfg.hosts = host.cfg
+        host_only_cfg.program.hosts = host.cfg
+        host_only_cfg.set_formattable()
+        return host_only_cfg.format_tree(host=host.cfg, host_idx=host_idx, pid='__pid__')
 
     def pformat(self):
         return pprint.pformat(self.raw())
@@ -495,7 +505,7 @@ class ShCommand(object):
                                   do_sudo = self.program.sudo)
             self.processes.append(p)
 
-            host_log_entry.update(self.formatted(host, i))
+            host_log_entry.update(self.formatted_trees[i])
             self.log_entries.append(host_log_entry)
             log_entry.append(host_log_entry)
 
