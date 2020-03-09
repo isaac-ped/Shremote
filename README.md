@@ -179,40 +179,40 @@ into which logs are placed on a remote host
 Example: [computed_fields.yml](examples/computed_fields.yml)
 
 #### Evaluation
-Strings, or portions of strings, placed within `$(...)` will be run through
+Strings, or portions of strings, placed within `$(...)$` will be run through
 python's `eval()` function before being used.
 
 This can be used to compute the time at which command should start,
 or to perform simple string substitution.
 
-E.g. `$(x + "y" * 5 + z)` will evaluate to `"xyyyyyz"`, and `$(40 + 2)`
+E.g. `$(x + "y" * 5 + z)$` will evaluate to `"xyyyyyz"`, and `$(40 + 2)$`
 will evaluate to `42`.
 
 References may also be nested within evaluations.
 
 In addition to typical python functionality, four special functions are
-provided for use within `$(...)` blocks:
+provided for use within `$(...)$` blocks:
 
 ```yaml
 # Get a command line argument, providing a default value
 # e.g. if shremote was initialized with --key=value: 'value'
 #      otherwise: 'default_value'
-x: $( getarg('key', 'default_value') )
+x: $( getarg('key', 'default_value') )$
 
 # Check for the existence of a command line argument
-x: $( 1 if hasarg('key') else 2)
+x: $( 1 if hasarg('key') else 2)$
 # or
-enabled: $(hasarg('use_program'))
+enabled: $(hasarg('use_program'))$
 
 #  Pass through an argument from the command line
 # e.g. if shremote was initialized with --context=3,
 #       this will pass --context=3 to grep. Otherwise it is ignored
-start: grep $( passarg('context') )
+start: grep $( passarg('context') )$
 
 # Prompt the user for a password at program initialization.
 # Useful especially for sudo access
 my_host:
-    sudo_password: $( askpass('host_id') )
+    sudo_password: $( askpass('host_id') )$
 # 'host_id' is an identifier, which allows you to use the same prompted
 # password in multiple locations without reprompting
 ```
@@ -288,7 +288,7 @@ Remote hosts on which to execute commands
   * `hostname`: The address (Hostname or IP) to use for ssh'ing
   * `ssh`: (optional) overrides `ssh` above
   * `log_dir`: (optional) Overrides `log_dir` above
-  * `sudo_passwd`: (optional) Provide a password to use when running `sudo` commands on that host. It is suggested to use the value `$( askpass('<hostname>') )` to avoid storing passwords in the config
+  * `sudo_passwd`: (optional) Provide a password to use when running `sudo` commands on that host. It is suggested to use the value `$( askpass('<hostname>') )$` to avoid storing passwords in the config
 * **Computed Fields**:
   * `output_dir`: The directory to which this experiment's logs are output on this host
   (`{log_dir}/{0.label}`)

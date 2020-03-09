@@ -392,6 +392,9 @@ class FmtConfig(object):
                 i+=1
             elif st[i] == '(':
                 inner_level += 1
+            elif st[i:i+2] == ")$":
+                if len(exec_starts) > 0:
+                    return st[exec_starts.pop(-1):i+2]
             elif st[i] == ')':
                 if inner_level > 0:
                     inner_level -= 1
@@ -453,7 +456,7 @@ class FmtConfig(object):
         eval_grp = self.innermost_exec_str(value)
         while eval_grp is not None:
             # Cut off the starting $, leaving (...)
-            to_eval = eval_grp[1:]
+            to_eval = eval_grp.strip("$")
 
             # If it's the only thing in the value, it may return a non-string
             if value.find(eval_grp) == 0 and len(eval_grp) == len(value):
