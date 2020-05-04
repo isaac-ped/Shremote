@@ -467,6 +467,7 @@ class FmtConfig(object):
                 rep_with = str(eval(to_eval))
             except Exception as e:
                 raise CfgFormatException("Error raised while evaluating {}: {}".format(to_eval, e))
+
             value = value.replace(eval_grp, rep_with)
             eval_grp = self.innermost_exec_str(value)
 
@@ -537,10 +538,6 @@ class FmtConfig(object):
                         except Exception as e2:
                             self.__format_kwargs.disable_computed_fields()
                     raise CfgKeyError(e1.args[0], "Error formatting {} ({}): {}".format(self.__name, formatted, e1.args[0]))
-                try:
-                    formatted = self.do_eval(formatted)
-                except:
-                    pass
             evaled = self.do_eval(formatted)
             if self.__types is not None:
                 casted = False
