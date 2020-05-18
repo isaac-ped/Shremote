@@ -3,6 +3,7 @@ import re
 import pprint
 import os
 import ast
+import threading
 from getpass import getpass
 from .logger import log_warn
 from collections import defaultdict
@@ -24,7 +25,15 @@ class FmtConfig(object):
 
     __password_cache = {}
 
-    __format_kwargs = None
+    __threadlocal = threading.local()
+
+    @property
+    def __format_kwargs(self):
+        return getattr(self.__threadlocal, 'format_kwargs', None)
+
+    @__format_kwargs.setter
+    def __format_kwargs(self, kwargs):
+        self.__threadlocal.format_kwargs = kwargs
 
     def __init__(self, raw_entry, path = [], root = None, formattable=False, computed=False):
         if root is None and len(path) > 0:
@@ -101,11 +110,11 @@ class FmtConfig(object):
             if key not in self.__formattable_root:
                 log_warn("Providing undocumented computed field to {}: {}".format(self.__name, key))
         if self.__formattable_root is not None:
-            FmtConfig.__format_kwargs = copy.deepcopy(self.__formattable_root)
+            self.__format_kwargs = copy.deepcopy(self.__formattable_root)
         else:
-            FmtConfig.__format_kwargs = FmtConfig({}, self.__path, self.__root, self.__formattable)
+            self.__format_kwargs = FmtConfig({}, self.__path, self.__root, self.__formattable)
         for k, v in kwargs.items():
-            FmtConfig.__format_kwargs[k] = v
+            self.__format_kwargs[k] = v
 
     def set_computed(self):
         self.__is_computed = True
@@ -507,13 +516,23 @@ class FmtConfig(object):
             if _strip_escaped_eval:
                 self.set_format_kwargs(kwargs)
             formatted = self.__raw
+            maxnest = 10000
             # Search for { which is not followed or preceeded by {
             while isinstance(formatted, str) and re.search('(?<!{){[^{]', formatted) is not None:
+                maxnest -= 1
+                if maxnest <= 0:
+                    raise CfgFormatException("Something has gone dreadfully wrong.")
                 try:
                     if isinstance(formatted, str):
+                        before = formatted
                         formatted = formatted.format(self.__root, **self.__format_kwargs)
+                        if before == formatted:
+                            formatted = self.do_eval(formatted)
+                            if before == formatted:
+                                raise CfgFormatException(":( :( :(:")
                     else:
                         formatted = formatted.format(_strip_escaped_eval = False, **self.__format_kwargs)
+
                 except CfgKeyError as e:
                     raise
                 except KeyError as e1:

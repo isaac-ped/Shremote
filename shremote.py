@@ -513,7 +513,7 @@ class ShRemote(object):
 
     CommandInstance = namedtuple("cmd_instance", ["time", "is_stop", "cmd"])
 
-    def sigint_handler(self, signal, frame):
+    def sigint_handler(self, sig, frame):
         if self.interrupts_attempted == 0:
             log_error("CTRL+C PRESSED!")
             self.event.set()
@@ -524,11 +524,16 @@ class ShRemote(object):
             log_error("CTRL+C PRESSED AGAIN! Processes may now be left running!!!")
         if self.interrupts_attempted > 2:
             log_error("CTRL+C PRESSED EVEN MORE! BE PATIENT!")
+        if self.interrupts_attempted > 3:
+            log_error("Giving up on good shutdown!")
+            signal.signal(signal.SIGINT, self.original_handler)
+
         self.interrupts_attempted += 1
 
     def __init__(self, cfg_file, label, out_dir, args_dict, suppress_output):
         self.event = threading.Event()
         self.interrupts_attempted = 0
+        self.original_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self.sigint_handler)
 
         self.output_dir = os.path.expanduser(os.path.join(out_dir, label, ''))
